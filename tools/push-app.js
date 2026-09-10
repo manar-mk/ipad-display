@@ -45,8 +45,17 @@ const sftpOp = (sftp, fn, ...a) => new Promise((res, rej) => sftp[fn](...a, (e, 
     await new Promise((res, rej) => sftp.fastPut(it.abs, dest + '/' + it.file, (e) => (e ? rej(e) : res())));
     console.log('  up', it.file);
   }
+  // optional launcher next to the app bundle (built by CI): /usr/bin/sblaunch
+  const sbl = path.join(path.dirname(src), 'sblaunch');
+  if (fs.existsSync(sbl)) {
+    await new Promise((res, rej) => sftp.fastPut(sbl, '/usr/bin/sblaunch', (e) => (e ? rej(e) : res())));
+    await new Promise((res, rej) => sftp.fastPut(sbl + '.entitlements', '/tmp/sblaunch.entitlements', (e) => (e ? rej(e) : res())));
+    const r = await run(c, 'chmod 755 /usr/bin/sblaunch && ldid -S/tmp/sblaunch.entitlements /usr/bin/sblaunch && echo sblaunch installed');
+    console.log('  ' + r.out);
+  }
   const post = await run(c, `chmod 755 '${dest}/IPadDisplay' && chown -R root:wheel '${dest}' && ldid -S '${dest}/IPadDisplay' && uicache 2>&1; echo "exit=$?"; ls -la '${dest}'`);
   console.log(post.out);
   c.end();
-  console.log('done: open "iPad Display" on the iPad home screen');
+  const launch = await run(c, 'test -x /usr/bin/sblaunch && sblaunch com.manar.ipaddisplay 2>&1 || echo "no sblaunch: open iPad Display on the home screen"');
+  console.log('launch: ' + launch.out);
 })().catch((e) => { console.error('error:', e.message); process.exit(2); });
