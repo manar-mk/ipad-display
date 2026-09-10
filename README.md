@@ -54,9 +54,17 @@ macOS при первом запуске спросит разрешение «�
 ## Кабель USB
 
 iOS разрешает только соединения *компьютер → iPad* через usbmuxd, а браузер не может
-слушать порт, поэтому для кабеля нужно нативное приложение на iPad. Оно лежит в `ios/`
-и собирается на Mac с Xcode 12/13 (см. `ios/README.md`). Хост подключается к usbmuxd
-сам (`usbmux.js`), отдельный `iproxy` не нужен.
+слушать порт, поэтому для кабеля нужно нативное приложение на iPad (`ios/`). Хост подключается
+к usbmuxd сам (`usbmux.js`), отдельный `iproxy` не нужен.
+
+**Проверенный путь без Mac (джейлбрейк):** iPad mini 1 на iOS 9.3.5 с EverPwnage + OpenSSH.
+Приложение собирается в GitHub Actions (`.github/workflows/ios-build.yml`: clang + ld64 из
+Linux-тулчейна theos, iPhoneOS9.3.sdk), затем `node tools/push-app.js out/IPadDisplay.app`
+заливает его по SSH через USB в `/Applications`, подписывает `ldid` на устройстве и запускает
+через `sblaunch` (iPad должен быть разблокирован). Проверено 2026-09-10: картинка идёт по кабелю.
+
+Полезные инструменты: `tools/ssh.js "<cmd>"` (SSH через usbmuxd), `tools/list-apps.js`,
+`tools/device-info.js`, `tools/usb-forward.js <local> <device>`.
 
 На компьютере должен работать usbmuxd:
 
