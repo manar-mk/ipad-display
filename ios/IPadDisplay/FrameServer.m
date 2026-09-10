@@ -166,6 +166,29 @@ static BOOL readFully(int fd, void *buf, size_t n) {
     [self writeBytes:msg length:sizeof(msg) toFd:fd];
 }
 
+- (void)sendScrollDx:(int16_t)dx dy:(int16_t)dy {
+    int fd = _clientFd;
+    if (fd < 0) return;
+    uint16_t ux = (uint16_t)dx, uy = (uint16_t)dy;
+    uint8_t msg[5] = { 'S', (uint8_t)(ux >> 8), (uint8_t)(ux & 0xff), (uint8_t)(uy >> 8), (uint8_t)(uy & 0xff) };
+    [self writeBytes:msg length:sizeof(msg) toFd:fd];
+}
+
+- (void)sendZoomDelta:(int16_t)delta {
+    int fd = _clientFd;
+    if (fd < 0) return;
+    uint16_t u = (uint16_t)delta;
+    uint8_t msg[3] = { 'Z', (uint8_t)(u >> 8), (uint8_t)(u & 0xff) };
+    [self writeBytes:msg length:sizeof(msg) toFd:fd];
+}
+
+- (void)sendRightClickX:(uint16_t)x y:(uint16_t)y {
+    int fd = _clientFd;
+    if (fd < 0) return;
+    uint8_t msg[5] = { 'R', (uint8_t)(x >> 8), (uint8_t)(x & 0xff), (uint8_t)(y >> 8), (uint8_t)(y & 0xff) };
+    [self writeBytes:msg length:sizeof(msg) toFd:fd];
+}
+
 - (void)readLoop:(int)fd {
     uint8_t header[4];
     NSMutableData *body = [NSMutableData data];

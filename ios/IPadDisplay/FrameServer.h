@@ -9,6 +9,9 @@
 // Device -> host: [uint8 type][payload]
 //   0x01 frame ack
 //   'T'  touch: [uint8 phase 0=down 1=move 2=up][uint16 BE x][uint16 BE y]  (x,y in 0..65535 of the frame)
+//   'S'  two-finger scroll: [int16 BE dx][int16 BE dy]  (points on the frame, positive = content moves right/down)
+//   'Z'  pinch: [int16 BE delta]  (delta of scale*1000 since the last message; >0 zoom in)
+//   'R'  right click (long press): [uint16 BE x][uint16 BE y]
 // Discovery: every 2 s the device broadcasts UDP "IPADDISPLAY <tcpPort>" to 255.255.255.255:7802.
 //
 // Transport: USB via usbmuxd or plain Wi-Fi; the app does not care which.
@@ -29,5 +32,8 @@
 - (BOOL)start:(NSError **)error;
 - (void)stop;
 - (void)sendTouchPhase:(uint8_t)phase x:(uint16_t)x y:(uint16_t)y;
+- (void)sendScrollDx:(int16_t)dx dy:(int16_t)dy;
+- (void)sendZoomDelta:(int16_t)delta;
+- (void)sendRightClickX:(uint16_t)x y:(uint16_t)y;
 + (NSString *)wifiAddress; // IPv4 of en0, or nil
 @end

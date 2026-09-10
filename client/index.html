@@ -118,17 +118,52 @@
     x = Math.max(0, Math.min(1, x)); y = Math.max(0, Math.min(1, y));
     ws.send(JSON.stringify({ t: 'touch', phase: phase, x: x, y: y }));
   }
-  var hudTaps = 0, hudTapT = 0;
+  // One finger = mouse; two fingers = scroll (centroid movement) and pinch (distance ratio); long press = right click.
+  var hudTaps = 0, hudTapT = 0, multi = false, mouseDown = false, lpTimer = null, lastC = null, lastD = 0;
+  function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+  function pair(ts) { var a = ts[0], b = ts[1]; return { cx: (a.clientX + b.clientX) / 2, cy: (a.clientY + b.clientY) / 2, d: Math.sqrt(Math.pow(a.clientX - b.clientX, 2) + Math.pow(a.clientY - b.clientY, 2)) }; }
+  function clearLP() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } }
   document.addEventListener('touchstart', function (e) {
     e.preventDefault();
     enableAudio();
     var now = +new Date(); hudTaps = (now - hudTapT < 400) ? hudTaps + 1 : 1; hudTapT = now;
     if (hudTaps >= 3) { hudOn = !hudOn; hud.style.display = hudOn ? 'block' : 'none'; frames = 0; bytes = 0; statT = now; } // triple tap: stats
-    sendTouch(0, e.changedTouches[0]);
+    if (e.touches.length >= 2) {
+      clearLP();
+      if (mouseDown) { sendTouch(2, e.touches[0]); mouseDown = false; }
+      multi = true; var p = pair(e.touches); lastC = { x: p.cx, y: p.cy }; lastD = p.d; return;
+    }
+    if (multi) return;
+    mouseDown = true; sendTouch(0, e.changedTouches[0]);
+    var t0 = e.changedTouches[0];
+    clearLP(); lpTimer = setTimeout(function () {
+      if (!mouseDown || multi || !rect.w) return;
+      sendTouch(2, t0); mouseDown = false;
+      send({ t: 'rclick', x: Math.max(0, Math.min(1, (t0.clientX - rect.x) / rect.w)), y: Math.max(0, Math.min(1, (t0.clientY - rect.y) / rect.h)) });
+    }, 700);
   }, false);
-  document.addEventListener('touchmove', function (e) { e.preventDefault(); sendTouch(1, e.changedTouches[0]); }, false);
-  document.addEventListener('touchend', function (e) { e.preventDefault(); sendTouch(2, e.changedTouches[0]); }, false);
-  document.addEventListener('touchcancel', function (e) { sendTouch(2, e.changedTouches[0]); }, false);
+  document.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+    if (multi && e.touches.length >= 2) {
+      var p = pair(e.touches), k = natW && rect.w ? natW / rect.w : 1;
+      var dx = (p.cx - lastC.x) * k, dy = (p.cy - lastC.y) * k;
+      if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) { send({ t: 'scroll', dx: Math.round(dx), dy: Math.round(dy) }); lastC = { x: p.cx, y: p.cy }; }
+      if (lastD > 0) { var z = (p.d / lastD - 1) * 1000; if (Math.abs(z) >= 10) { send({ t: 'zoom', d: Math.round(z) }); lastD = p.d; } }
+      return;
+    }
+    if (multi || !mouseDown) return;
+    var t = e.changedTouches[0];
+    if (lpTimer && lastC === null) { /* moving cancels long press */ }
+    clearLP();
+    sendTouch(1, t);
+  }, false);
+  function touchDone(e) {
+    e.preventDefault(); clearLP();
+    if (mouseDown) { sendTouch(2, e.changedTouches[0]); mouseDown = false; }
+    if (e.touches.length === 0) { multi = false; lastC = null; lastD = 0; }
+  }
+  document.addEventListener('touchend', touchDone, false);
+  document.addEventListener('touchcancel', touchDone, false);
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, false);
   window.addEventListener('resize', fit, false);
   window.addEventListener('orientationchange', function () { setTimeout(fit, 300); }, false);

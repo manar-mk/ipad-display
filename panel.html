@@ -168,6 +168,7 @@ async function loadAudioDevices() {
   sel.innerHTML = '<option value="auto">авто: виртуальный кабель, иначе весь системный звук</option><option value="loopback">весь системный звук</option>'
     + devs.map(d => '<option value="' + d.deviceId + '">' + (d.label || 'устройство записи') + (isCable(d.label) ? ' ★' : '') + '</option>').join('');
   sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'auto';
+  host.log('audio inputs: ' + devs.map(d => d.label).join(' | '));
   return devs;
 }
 async function resolveAudioSource() {
@@ -180,18 +181,20 @@ async function resolveAudioSource() {
 
 // ---------- audio: chosen source -> 22050 Hz mono s16le chunks ----------
 async function startAudio(s) {
+  host.log('startAudio: checkbox=' + $('#audio').checked + ' displayAudioTracks=' + s.getAudioTracks().length);
   if (!$('#audio').checked) return;
   let track = null;
   const srcId = await resolveAudioSource();
+  host.log('audio source=' + srcId + ' displayTracks=' + s.getAudioTracks().length);
   if (srcId !== 'loopback') {
     try {
       const ms = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: srcId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       track = ms.getAudioTracks()[0]; audioLabel = 'кабель';
-    } catch (e) { console.warn('audio device failed, falling back to loopback', e.message); }
+    } catch (e) { host.log('audio device failed: ' + e.message); }
   }
   if (!track) { track = s.getAudioTracks()[0]; audioLabel = 'система'; }
-  if (!track) return;
-  audioTrack = track;
+  if (!track) { host.log('audio: no track'); return; }
+  audioTrack = track; host.log('audio: using ' + audioLabel + ' ' + track.label);
   const RATE = 22050;
   audioCtx = new AudioContext({ sampleRate: RATE });
   const src = audioCtx.createMediaStreamSource(new MediaStream([track]));

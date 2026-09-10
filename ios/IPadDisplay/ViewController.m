@@ -5,13 +5,18 @@
 static const uint16_t kPort = 7801;
 static const int kAudioBuffers = 6;
 
-@interface ViewController () <FrameServerDelegate>
+@interface ViewController () <FrameServerDelegate, UIGestureRecognizerDelegate>
 @property (nonatomic, strong) UIImageView *screen;
 @property (nonatomic, strong) UILabel *status;
 @property (nonatomic, strong) FrameServer *server;
 @end
 
 @implementation ViewController {
+    // touch state: one finger drives the mouse, two fingers scroll / pinch
+    BOOL _multi, _mouseDown;
+    UITouch *_mouseTouch;
+    CGPoint _lastPan;
+    CGFloat _lastScale;
     // audio playback: PCM chunks from the host are queued into AudioQueue buffers
     AudioQueueRef _queue;
     AudioQueueBufferRef _buffers[kAudioBuffers];
@@ -25,7 +30,18 @@ static const int kAudioBuffers = 6;
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor blackColor];
-    self.view.multipleTouchEnabled = NO;
+    self.view.multipleTouchEnabled = YES;
+
+    // two-finger pan = scroll, pinch = zoom (Ctrl+wheel on the host), long press = right click
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(onPan:)];
+    pan.minimumNumberOfTouches = 2; pan.maximumNumberOfTouches = 2; pan.cancelsTouchesInView = NO; pan.delegate = self;
+    UIPinchGestureRecognizer *pinch = [[UIPinchGestureRecognizer alloc] initWithTarget:self action:@selector(onPinch:)];
+    pinch.cancelsTouchesInView = NO; pinch.delegate = self;
+    UILongPressGestureRecognizer *lp = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(onLongPress:)];
+    lp.minimumPressDuration = 0.7; lp.allowableMovement = 12; lp.cancelsTouchesInView = NO; lp.delegate = self;
+    [self.view addGestureRecognizer:pan];
+    [self.view addGestureRecognizer:pinch];
+    [self.view addGestureRecognizer:lp];
 
     self.screen = [[UIImageView alloc] initWithFrame:self.view.bounds];
     self.screen.contentMode = UIViewContentModeScaleAspectFit;
@@ -94,10 +110,65 @@ static const int kAudioBuffers = 6;
     [self.server sendTouchPhase:phase x:(uint16_t)(nx * 65535) y:(uint16_t)(ny * 65535)];
 }
 
-- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event { [self sendTouch:touches.anyObject phase:0]; }
-- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event { [self sendTouch:touches.anyObject phase:1]; }
-- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event { [self sendTouch:touches.anyObject phase:2]; }
-- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event { [self sendTouch:touches.anyObject phase:2]; }
+// One finger = mouse. As soon as a second finger lands, the mouse button is released and the
+// gesture recognizers (two-finger pan = scroll, pinch = zoom) take over until all fingers lift.
+- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
+    if (event.allTouches.count >= 2) { if (_mouseDown) { [self sendTouch:_mouseTouch phase:2]; _mouseDown = NO; } _multi = YES; return; }
+    if (_multi) return;
+    _mouseTouch = touches.anyObject; _mouseDown = YES;
+    [self sendTouch:_mouseTouch phase:0];
+}
+- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
+    if (_multi || !_mouseDown) return;
+    if ([touches containsObject:_mouseTouch]) [self sendTouch:_mouseTouch phase:1];
+}
+- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event { [self touchesDone:touches withEvent:event]; }
+- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event { [self touchesDone:touches withEvent:event]; }
+- (void)touchesDone:(NSSet *)touches withEvent:(UIEvent *)event {
+    if (_mouseDown && [touches containsObject:_mouseTouch]) { [self sendTouch:_mouseTouch phase:2]; _mouseDown = NO; }
+    // all fingers up -> leave multi mode
+    NSUInteger still = 0;
+    for (UITouch *t in event.allTouches) if (t.phase != UITouchPhaseEnded && t.phase != UITouchPhaseCancelled) still++;
+    if (still == 0) { _multi = NO; _mouseTouch = nil; }
+}
+
+// points on screen -> pixels of the transmitted frame
+- (CGFloat)frameScale {
+    CGRect r = [self imageRect];
+    return (r.size.width > 0 && self.screen.image) ? self.screen.image.size.width / r.size.width : 1;
+}
+
+- (void)onPan:(UIPanGestureRecognizer *)g {
+    if (g.state == UIGestureRecognizerStateBegan) { _lastPan = CGPointZero; return; }
+    if (g.state != UIGestureRecognizerStateChanged) return;
+    CGPoint t = [g translationInView:self.view];
+    CGFloat k = [self frameScale];
+    CGFloat dx = (t.x - _lastPan.x) * k, dy = (t.y - _lastPan.y) * k;
+    _lastPan = t;
+    if (fabs(dx) < 1 && fabs(dy) < 1) return;
+    [self.server sendScrollDx:(int16_t)MAX(-32000, MIN(32000, dx)) dy:(int16_t)MAX(-32000, MIN(32000, dy))];
+}
+
+- (void)onPinch:(UIPinchGestureRecognizer *)g {
+    if (g.state == UIGestureRecognizerStateBegan) { _lastScale = 1.0; return; }
+    if (g.state != UIGestureRecognizerStateChanged) return;
+    CGFloat d = (g.scale - _lastScale) * 1000;
+    if (fabs(d) < 10) return;
+    _lastScale = g.scale;
+    [self.server sendZoomDelta:(int16_t)MAX(-32000, MIN(32000, d))];
+}
+
+- (void)onLongPress:(UILongPressGestureRecognizer *)g {
+    if (g.state != UIGestureRecognizerStateBegan) return;
+    CGRect r = [self imageRect];
+    if (CGRectIsEmpty(r)) return;
+    CGPoint p = [g locationInView:self.screen];
+    CGFloat nx = MAX(0, MIN(1, (p.x - r.origin.x) / r.size.width)), ny = MAX(0, MIN(1, (p.y - r.origin.y) / r.size.height));
+    if (_mouseDown) { [self sendTouch:_mouseTouch phase:2]; _mouseDown = NO; }
+    [self.server sendRightClickX:(uint16_t)(nx * 65535) y:(uint16_t)(ny * 65535)];
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)a shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)b { return YES; }
 
 #pragma mark - FrameServerDelegate
 

@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('host', {
   getInfo: () => ipcRenderer.invoke('get-info'),
   saveSettings: (patch) => ipcRenderer.invoke('save-settings', patch),
   setLoopback: (v) => ipcRenderer.invoke('set-loopback', v),
+  log: (m) => ipcRenderer.send('log', m),
   tcpConnect: (host, port) => ipcRenderer.invoke('tcp-connect', host, port),
   tcpDisconnect: () => ipcRenderer.invoke('tcp-disconnect'),
   usbConnect: (port) => ipcRenderer.invoke('usb-connect', port),

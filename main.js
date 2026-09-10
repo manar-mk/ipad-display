@@ -95,10 +95,18 @@ function mouseCmd(line) {
     if (!mouseHelper) {
       // A persistent PowerShell process: SetCursorPos + mouse_event per line, no native module needed.
       const script = `
-Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class M{[DllImport("user32.dll")]public static extern bool SetCursorPos(int x,int y);[DllImport("user32.dll")]public static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr e);[DllImport("user32.dll")]public static extern bool SetProcessDpiAwarenessContext(IntPtr c);}'
+Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class M{[DllImport("user32.dll")]public static extern bool SetCursorPos(int x,int y);[DllImport("user32.dll")]public static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr e);[DllImport("user32.dll")]public static extern void keybd_event(byte k,byte s,uint f,UIntPtr e);[DllImport("user32.dll")]public static extern bool SetProcessDpiAwarenessContext(IntPtr c);}'
 [M]::SetProcessDpiAwarenessContext([IntPtr]-4) | Out-Null   # per-monitor v2: SetCursorPos takes physical pixels
 while ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { break }; $p = $l.Split(' ');
-  switch ($p[0]) { 'move' { [M]::SetCursorPos([int]$p[1],[int]$p[2]) } 'down' { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(2,0,0,0,[UIntPtr]::Zero) } 'up' { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(4,0,0,0,[UIntPtr]::Zero) } } }`;
+  switch ($p[0]) {
+    'move'   { [M]::SetCursorPos([int]$p[1],[int]$p[2]) }
+    'down'   { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(2,0,0,0,[UIntPtr]::Zero) }
+    'up'     { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(4,0,0,0,[UIntPtr]::Zero) }
+    'rclick' { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(8,0,0,0,[UIntPtr]::Zero); [M]::mouse_event(16,0,0,0,[UIntPtr]::Zero) }
+    'wheel'  { [M]::mouse_event(0x0800,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero) }
+    'hwheel' { [M]::mouse_event(0x1000,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero) }
+    'zoom'   { [M]::keybd_event(0x11,0,0,[UIntPtr]::Zero); [M]::mouse_event(0x0800,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero); [M]::keybd_event(0x11,0,2,[UIntPtr]::Zero) }
+  } }`;
       mouseHelper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
       mouseHelper.on('exit', () => { mouseHelper = null; });
       mouseHelper.on('error', () => { mouseHelper = null; });
@@ -114,10 +122,16 @@ def ev(t, x, y, b=Quartz.kCGMouseButtonLeft):
 for line in sys.stdin:
     p = line.split()
     if not p: continue
-    x, y = float(p[1]), float(p[2])
+    x, y = (float(p[1]), float(p[2])) if len(p) > 2 else (0.0, 0.0)
     if p[0] == 'move': ev(Quartz.kCGEventMouseMoved, x, y)
     elif p[0] == 'down': ev(Quartz.kCGEventLeftMouseDown, x, y)
     elif p[0] == 'up': ev(Quartz.kCGEventLeftMouseUp, x, y)
+    elif p[0] == 'rclick': ev(Quartz.kCGEventRightMouseDown, x, y, Quartz.kCGMouseButtonRight); ev(Quartz.kCGEventRightMouseUp, x, y, Quartz.kCGMouseButtonRight)
+    elif p[0] in ('wheel', 'hwheel', 'zoom'):
+        n = int(float(p[1]) / 120)
+        e = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitLine, 2, n if p[0] != 'hwheel' else 0, n if p[0] == 'hwheel' else 0)
+        if p[0] == 'zoom': Quartz.CGEventSetFlags(e, Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, e)
 `;
       mouseHelper = spawn('python3', ['-c', py], { stdio: ['pipe', 'ignore', 'ignore'] });
       mouseHelper.on('exit', () => { mouseHelper = null; });
@@ -142,19 +156,38 @@ function onTouch(phase, nx, ny) {
   mouseCmd((phase === 0 ? 'down' : phase === 2 ? 'up' : 'move') + ' ' + x + ' ' + y);
 }
 
-// Device -> host bytes on the TCP socket: 0x01 ack, 'T' touch (6 bytes)
+// Two-finger scroll: frame pixels -> wheel notches (WHEEL_DELTA = 120). Fractions are accumulated.
+const scrollAcc = { x: 0, y: 0, z: 0 };
+const PIXELS_PER_NOTCH = 40;
+function onScroll(dx, dy) {
+  scrollAcc.x += dx; scrollAcc.y += dy;
+  const nx = Math.trunc(scrollAcc.x / PIXELS_PER_NOTCH), ny = Math.trunc(scrollAcc.y / PIXELS_PER_NOTCH);
+  if (ny) { scrollAcc.y -= ny * PIXELS_PER_NOTCH; mouseCmd('wheel ' + (ny * 120)); }   // content follows the fingers: down = wheel up
+  if (nx) { scrollAcc.x -= nx * PIXELS_PER_NOTCH; mouseCmd('hwheel ' + (-nx * 120)); }
+}
+function onZoom(delta) { // delta = scale change * 1000; one Ctrl+wheel notch per 8 %
+  scrollAcc.z += delta;
+  const n = Math.trunc(scrollAcc.z / 80);
+  if (n) { scrollAcc.z -= n * 80; mouseCmd('zoom ' + (n * 120)); }
+}
+function onRightClick(nx, ny) {
+  const d = selectedDisplay || screen.getPrimaryDisplay(); const b = d.bounds;
+  const o = process.platform === 'win32' ? (d.nativeOrigin || { x: b.x * d.scaleFactor, y: b.y * d.scaleFactor }) : { x: b.x, y: b.y };
+  const sf = process.platform === 'win32' ? d.scaleFactor : 1;
+  mouseCmd('rclick ' + Math.round(o.x + nx * b.width * sf) + ' ' + Math.round(o.y + ny * b.height * sf));
+}
+
+// Device -> host bytes on the TCP socket: 0x01 ack, 'T' touch (6), 'S' scroll (5), 'Z' zoom (3), 'R' right click (5)
 function onDeviceData(d) {
   tcp.rx = Buffer.concat([tcp.rx, d]);
   for (;;) {
     if (!tcp.rx.length) return;
     const t = tcp.rx[0];
     if (t === 0x01) { tcp.rx = tcp.rx.subarray(1); tcp.inflight = false; sendTcp(); continue; }
-    if (t === 0x54 /* 'T' */) {
-      if (tcp.rx.length < 6) return;
-      onTouch(tcp.rx[1], tcp.rx.readUInt16BE(2) / 65535, tcp.rx.readUInt16BE(4) / 65535);
-      tcp.rx = tcp.rx.subarray(6);
-      continue;
-    }
+    if (t === 0x54 /* T */) { if (tcp.rx.length < 6) return; onTouch(tcp.rx[1], tcp.rx.readUInt16BE(2) / 65535, tcp.rx.readUInt16BE(4) / 65535); tcp.rx = tcp.rx.subarray(6); continue; }
+    if (t === 0x53 /* S */) { if (tcp.rx.length < 5) return; onScroll(tcp.rx.readInt16BE(1), tcp.rx.readInt16BE(3)); tcp.rx = tcp.rx.subarray(5); continue; }
+    if (t === 0x5a /* Z */) { if (tcp.rx.length < 3) return; onZoom(tcp.rx.readInt16BE(1)); tcp.rx = tcp.rx.subarray(3); continue; }
+    if (t === 0x52 /* R */) { if (tcp.rx.length < 5) return; onRightClick(tcp.rx.readUInt16BE(1) / 65535, tcp.rx.readUInt16BE(3) / 65535); tcp.rx = tcp.rx.subarray(5); continue; }
     tcp.rx = tcp.rx.subarray(1); // unknown byte: skip
   }
 }
@@ -268,7 +301,15 @@ function startServer() {
       const t = msg.toString();
       if (t === 'a') { st.inflight = false; sendWs(ws, st); }
       else if (t === 'hello') { st.sentSeq = 0; st.inflight = false; sendWs(ws, st); }
-      else if (t[0] === '{') { try { const j = JSON.parse(t); if (j.t === 'touch') onTouch(j.phase, j.x, j.y); } catch (e) { /* ignore */ } }
+      else if (t[0] === '{') {
+        try {
+          const j = JSON.parse(t);
+          if (j.t === 'touch') onTouch(j.phase, j.x, j.y);
+          else if (j.t === 'scroll') onScroll(j.dx, j.dy);
+          else if (j.t === 'zoom') onZoom(j.d);
+          else if (j.t === 'rclick') onRightClick(j.x, j.y);
+        } catch (e) { /* ignore */ }
+      }
     });
     ws.on('close', () => { wsClients.delete(ws); notifyStatus(); });
     ws.on('error', () => {});
@@ -386,6 +427,7 @@ ipcMain.handle('install-vdd', () => new Promise((resolve) => {
   const ps = spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process powershell -Verb RunAs -Wait -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-Command',${JSON.stringify(inner)})`], { windowsHide: true });
   ps.on('exit', (code) => { let out = ''; try { out = fs.readFileSync(log, 'utf8'); } catch (e) { /* no log */ } resolve({ code, out }); });
 }));
+ipcMain.on('log', (e, msg) => console.log('[panel]', msg));
 ipcMain.on('frame', (e, ab) => onNewFrame(Buffer.from(ab)));
 ipcMain.on('audio-format', (e, rate, channels) => onAudioFormat(rate, channels));
 ipcMain.on('audio', (e, ab) => onAudioChunk(Buffer.from(ab)));
