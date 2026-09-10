@@ -121,7 +121,8 @@ function mouseCmd(line) {
     if (!mouseHelper) {
       // A persistent PowerShell process: SetCursorPos + mouse_event per line, no native module needed.
       const script = `
-Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class M{[DllImport("user32.dll")]public static extern bool SetCursorPos(int x,int y);[DllImport("user32.dll")]public static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr e);[DllImport("user32.dll")]public static extern void keybd_event(byte k,byte s,uint f,UIntPtr e);[DllImport("user32.dll")]public static extern bool SetProcessDpiAwarenessContext(IntPtr c);}'
+Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class M{[DllImport("user32.dll")]public static extern bool SetCursorPos(int x,int y);[DllImport("user32.dll")]public static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr e);[DllImport("user32.dll")]public static extern void keybd_event(byte k,byte s,uint f,UIntPtr e);[DllImport("user32.dll")]public static extern bool SetProcessDpiAwarenessContext(IntPtr c);[StructLayout(LayoutKind.Sequential)]public struct PT{public int X,Y;}[DllImport("user32.dll")]public static extern bool GetCursorPos(out PT p);[DllImport("user32.dll")]public static extern IntPtr WindowFromPoint(PT p);[DllImport("user32.dll")]public static extern IntPtr GetAncestor(IntPtr h,uint f);[DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);
+public static void Focus(){PT p;GetCursorPos(out p);IntPtr h=WindowFromPoint(p);if(h==IntPtr.Zero)return;IntPtr r=GetAncestor(h,2);if(r==IntPtr.Zero)r=h;if(GetForegroundWindow()==r)return;keybd_event(0x12,0,0,UIntPtr.Zero);keybd_event(0x12,0,2,UIntPtr.Zero);SetForegroundWindow(r);}}'
 [M]::SetProcessDpiAwarenessContext([IntPtr]-4) | Out-Null   # per-monitor v2: SetCursorPos takes physical pixels
 while ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { break }; $p = $l.Split(' ');
   switch ($p[0]) {
@@ -131,7 +132,7 @@ while ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { break }; $p =
     'rclick' { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(8,0,0,0,[UIntPtr]::Zero); [M]::mouse_event(16,0,0,0,[UIntPtr]::Zero) }
     'wheel'  { [M]::mouse_event(0x0800,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero) }
     'hwheel' { [M]::mouse_event(0x1000,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero) }
-    'zoom'   { [M]::keybd_event(0x11,0,0,[UIntPtr]::Zero); [M]::mouse_event(0x0800,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero); [M]::keybd_event(0x11,0,2,[UIntPtr]::Zero) }
+    'zoom'   { [M]::Focus(); [M]::keybd_event(0x11,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 15; [M]::mouse_event(0x0800,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [M]::keybd_event(0x11,0,2,[UIntPtr]::Zero) }
   } }`;
       mouseHelper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
       mouseHelper.on('exit', () => { mouseHelper = null; });
