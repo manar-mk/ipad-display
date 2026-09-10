@@ -55,7 +55,7 @@ const sftpOp = (sftp, fn, ...a) => new Promise((res, rej) => sftp[fn](...a, (e, 
   }
   const post = await run(c, `chmod 755 '${dest}/IPadDisplay' && chown -R root:wheel '${dest}' && ldid -S '${dest}/IPadDisplay' && uicache 2>&1; echo "exit=$?"; ls -la '${dest}'`);
   console.log(post.out);
-  c.end();
   const launch = await run(c, 'test -x /usr/bin/sblaunch && sblaunch com.manar.ipaddisplay 2>&1 || echo "no sblaunch: open iPad Display on the home screen"');
   console.log('launch: ' + launch.out);
+  c.end();
 })().catch((e) => { console.error('error:', e.message); process.exit(2); });

@@ -55,7 +55,7 @@ file "$APP/IPadDisplay" || true
 # sblaunch: launch-by-bundle-id helper for the jailbroken device (signed on device with its entitlements)
 TOOLS="$(dirname "$SRC")/tools"
 echo "CC  sblaunch"
-clang --target=armv7-apple-ios9.0 -isysroot "$SDK" -O2 -fuse-ld=ld -F"$SDK/System/Library/PrivateFrameworks" \n  -framework CoreFoundation -framework SpringBoardServices -Xlinker -ios_version_min -Xlinker 9.0 \n  -o "$OUT/sblaunch" "$TOOLS/sblaunch.c"
+clang --target=armv7-apple-ios9.0 -isysroot "$SDK" -O2 -fuse-ld=ld -F"$SDK/System/Library/PrivateFrameworks" -framework CoreFoundation -framework SpringBoardServices -Xlinker -ios_version_min -Xlinker 9.0 -o "$OUT/sblaunch" "$TOOLS/sblaunch.c"
 cp "$TOOLS/sblaunch.entitlements" "$OUT/sblaunch.entitlements"
 
 ( cd "$OUT" && zip -qr IPadDisplay.app.zip IPadDisplay.app sblaunch sblaunch.entitlements )
