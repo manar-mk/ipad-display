@@ -20,10 +20,10 @@ iPad 2/3 на iOS 9.3.5, которые не поддерживают Sidecar, D
 При запуске хост сам: выбирает виртуальный монитор (второй экран 4:3), начинает захват,
 включает передачу звука (Windows) и приём касаний, слушает UDP-маячки приложения iPad и
 подключается к нему по Wi-Fi; если iPad на кабеле, а Wi-Fi нет — через usbmuxd. Настройки
-запоминаются в  (macOS: ).
+запоминаются в `%APPDATA%\ipad-display\settings.json` (macOS: `~/Library/Application Support/ipad-display/`).
 
 Виртуальный монитор на Windows ставится кнопкой «Установить виртуальный монитор 1024×768»
-в панели (драйвер VirtualDrivers/Virtual-Display-Driver, MIT, лежит в ,
+в панели (драйвер VirtualDrivers/Virtual-Display-Driver, MIT, лежит в `driver/windows/`,
 нужен запрос администратора). Его положение относительно основного экрана меняется в
 Параметры → Система → Дисплей.
 
@@ -124,6 +124,9 @@ node tools/usbmux-list.js
 | `tools/test-client.js` | эмулятор iPad по WebSocket: `node tools/test-client.js ws://127.0.0.1:7800/ 10` |
 | `tools/test-tcp-device.js` | эмулятор iOS-приложения по TCP: `node tools/test-tcp-device.js 7801 5` |
 | `tools/usbmux-list.js` | проверка usbmuxd и туннеля к iPad по кабелю |
+| `tools/ssh.js`, `tools/push-app.js`, `tools/list-apps.js`, `tools/device-info.js` | SSH, установка и диагностика iPad через usbmuxd (или `IPAD_SSH_HOST=<ip>` по Wi-Fi) |
+| `driver/windows/` | Virtual Display Driver + `install-vdd.ps1`, ставится кнопкой из панели |
+| `ios/tools/sblaunch.c` | запуск приложения по bundle id на джейлбрейкнутом iPad |
 
 Переменные окружения: `IPAD_DISPLAY_PORT` (порт HTTP, по умолчанию 7800),
 `IPAD_DISPLAY_AUTOSTART=1` (нажать «Старт» при запуске), `IPAD_DISPLAY_TCP=host:port` или `IPAD_DISPLAY_TCP=usb`
