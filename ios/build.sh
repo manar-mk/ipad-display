@@ -11,6 +11,23 @@ export PATH="$TC/bin:$PATH"
 CFLAGS=(--target=armv7-apple-ios9.0 -isysroot "$SDK" -fobjc-arc -O2 -Wall -Wno-unused-command-line-argument)
 rm -rf "$OUT"; mkdir -p "$OUT/obj" "$APP"
 
+# theos SDKs are stripped: add empty stubs for re-exported system dylibs that are missing.
+for d in $(grep -A80 "re-exports" "$SDK/usr/lib/libSystem.tbd" | grep -oE "/usr/lib/system/[A-Za-z0-9_.+-]+.dylib" | sort -u); do
+  n=$(basename "$d" .dylib)
+  if [ ! -f "$SDK/usr/lib/system/$n.tbd" ]; then
+    echo "STUB $d"
+    printf -- "---
+archs: [ armv7, armv7s, arm64 ]
+platform: ios
+install-name: %s
+exports:
+  - archs: [ armv7, armv7s, arm64 ]
+    symbols: [ ]
+...
+" "$d" > "$SDK/usr/lib/system/$n.tbd"
+  fi
+done
+
 objs=()
 for m in "$SRC"/*.m; do
   o="$OUT/obj/$(basename "${m%.m}").o"
