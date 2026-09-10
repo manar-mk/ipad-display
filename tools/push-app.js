@@ -5,6 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('ssh2');
 const usbmux = require('../usbmux');
+const net = require('net');
+// IPAD_SSH_HOST=<ip> installs over Wi-Fi instead of the USB tunnel
+const openSock = () => process.env.IPAD_SSH_HOST ? new Promise((res, rej) => { const c = net.connect(22, process.env.IPAD_SSH_HOST); c.once('connect', () => res(c)); c.once('error', rej); }) : usbmux.connect(22);
 
 const src = process.argv[2];
 if (!src || !fs.existsSync(path.join(src, 'Info.plist'))) { console.error('usage: node tools/push-app.js <IPadDisplay.app>'); process.exit(1); }
@@ -30,7 +33,7 @@ const run = (c, cmd) => new Promise((res, rej) => c.exec(cmd, (err, s) => {
 const sftpOp = (sftp, fn, ...a) => new Promise((res, rej) => sftp[fn](...a, (e, r) => (e ? rej(e) : res(r))));
 
 (async () => {
-  const sock = await usbmux.connect(22);
+  const sock = await openSock();
   const c = new Client();
   await new Promise((res, rej) => {
     c.on('ready', res).on('error', rej).connect({ sock, username: 'root', password: process.env.IPAD_SSH_PASS || 'alpine',
