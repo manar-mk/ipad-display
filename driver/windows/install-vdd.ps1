@@ -1,7 +1,7 @@
-# Installs the Virtual Display Driver (IddCx, VirtualDrivers/Virtual-Display-Driver) and creates
+﻿# Installs the Virtual Display Driver (IddCx, VirtualDrivers/Virtual-Display-Driver) and creates
 # one root-enumerated Root\MttVDD device. Run elevated. Settings live in C:\VirtualDisplayDriver.
 $ErrorActionPreference = 'Stop'
-$src = "C:\Users\kurma\vdd\VirtualDisplayDriver"
+$src = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "VirtualDisplayDriver"
 $cfgDir = "C:\VirtualDisplayDriver"
 New-Item -ItemType Directory -Force $cfgDir | Out-Null
 Copy-Item "$src\vdd_settings.xml" "$cfgDir\vdd_settings.xml" -Force
@@ -43,3 +43,4 @@ $r = [Dev]::Create("Root\MttVDD", "$src\MttVDD.inf", "{4D36E968-E325-11CE-BFC1-0
 Write-Host "create device: $r"
 Start-Sleep 3
 Get-PnpDevice | Where-Object { $_.InstanceId -like 'ROOT\DISPLAY\*' } | Select-Object Status,FriendlyName,InstanceId | Format-Table -AutoSize | Out-String | Write-Host
+
