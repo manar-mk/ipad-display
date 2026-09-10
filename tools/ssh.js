@@ -2,10 +2,13 @@
 // usage: node tools/ssh.js "<command>"      env: IPAD_SSH_PASS (default: alpine)
 const { Client } = require('ssh2');
 const usbmux = require('../usbmux');
+const net = require('net');
+// IPAD_SSH_HOST=<ip> connects over Wi-Fi instead of the USB tunnel
+const openSock = () => process.env.IPAD_SSH_HOST ? new Promise((res, rej) => { const c = net.connect(22, process.env.IPAD_SSH_HOST); c.once('connect', () => res(c)); c.once('error', rej); }) : usbmux.connect(22);
 
 const cmd = process.argv.slice(2).join(' ') || 'uname -a';
 (async () => {
-  const sock = await usbmux.connect(22);
+  const sock = await openSock();
   const c = new Client();
   c.on('ready', () => {
     c.exec(cmd, (err, stream) => {
