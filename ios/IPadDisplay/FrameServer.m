@@ -137,7 +137,7 @@ static BOOL readFully(int fd, void *buf, size_t n) {
     struct ifaddrs *list = NULL;
     if (getifaddrs(&list) == 0) {
         for (struct ifaddrs *p = list; p; p = p->ifa_next) {
-            if (p->ifa_addr && p->ifa_addr->sa_family == AF_INET && strcmp(p->ifa_name, "en0") == 0) {
+            if (p->ifa_addr && p->ifa_addr->sa_family == AF_INET && [@(p->ifa_name) isEqualToString:@"en0"]) {
                 result = @(inet_ntoa(((struct sockaddr_in *)p->ifa_addr)->sin_addr));
                 break;
             }
