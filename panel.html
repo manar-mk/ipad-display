@@ -63,6 +63,7 @@
   <div class="row">
     <label><input type="checkbox" id="autostart"> запускать захват при старте</label>
     <label><input type="checkbox" id="audio"> звук на iPad</label>
+    <label>источник <select id="asrc"><option value="loopback">весь системный звук</option></select></label>
     <label><input type="checkbox" id="touch"> касания с iPad как мышь</label>
   </div>
   <div class="row">
@@ -111,7 +112,7 @@ const work = document.createElement('canvas'), wctx = work.getContext('2d', { al
 const small = document.createElement('canvas'); small.width = 48; small.height = 36; const sctx = small.getContext('2d', { alpha: false, willReadFrequently: true });
 const preview = $('#preview'), pctx = preview.getContext('2d', { alpha: false });
 let prevSmall = null, lastForced = 0, frames = 0, bytes = 0, statT = Date.now(), encoding = false;
-let audioCtx = null, audioNode = null;
+let audioCtx = null, audioNode = null, audioTrack = null, audioLabel = '';
 
 // ---------- settings <-> UI ----------
 function applySettingsToUI() {
@@ -120,7 +121,7 @@ function applySettingsToUI() {
 }
 function readSettingsFromUI() {
   return { size: $('#size').value, fps: Number($('#fps').value) || 15, quality: Number($('#q').value) || 60,
-    autostart: $('#autostart').checked, audio: $('#audio').checked, touch: $('#touch').checked, autoconnect: $('#autoconnect').checked };
+    autostart: $('#autostart').checked, audio: $('#audio').checked, audioSource: $('#asrc').value, touch: $('#touch').checked, autoconnect: $('#autoconnect').checked };
 }
 async function persist() { settings = await host.saveSettings(readSettingsFromUI()); }
 
@@ -158,10 +159,39 @@ function targetSize(vw, vh) {
   return [Math.round(vw * k), Math.round(vh * k)];
 }
 
-// ---------- audio: system loopback -> 22050 Hz mono s16le chunks ----------
-function startAudio(s) {
-  const track = s.getAudioTracks()[0];
-  if (!track || !$('#audio').checked) return;
+// ---------- audio source list (virtual cable = separate "iPad" output device in Windows) ----------
+const isCable = (label) => /CABLE Output|VB-Audio|Virtual Cable|iPad/i.test(label || '');
+async function loadAudioDevices() {
+  const sel = $('#asrc'), cur = settings.audioSource || 'auto';
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications'); } catch (e) { /* no devices */ }
+  sel.innerHTML = '<option value="auto">авто: виртуальный кабель, иначе весь системный звук</option><option value="loopback">весь системный звук</option>'
+    + devs.map(d => '<option value="' + d.deviceId + '">' + (d.label || 'устройство записи') + (isCable(d.label) ? ' ★' : '') + '</option>').join('');
+  sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'auto';
+  return devs;
+}
+async function resolveAudioSource() {
+  const v = $('#asrc').value;
+  if (v !== 'auto') return v;
+  const devs = await loadAudioDevices();
+  const cable = devs.find(d => isCable(d.label));
+  return cable ? cable.deviceId : 'loopback';
+}
+
+// ---------- audio: chosen source -> 22050 Hz mono s16le chunks ----------
+async function startAudio(s) {
+  if (!$('#audio').checked) return;
+  let track = null;
+  const srcId = await resolveAudioSource();
+  if (srcId !== 'loopback') {
+    try {
+      const ms = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: srcId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      track = ms.getAudioTracks()[0]; audioLabel = 'кабель';
+    } catch (e) { console.warn('audio device failed, falling back to loopback', e.message); }
+  }
+  if (!track) { track = s.getAudioTracks()[0]; audioLabel = 'система'; }
+  if (!track) return;
+  audioTrack = track;
   const RATE = 22050;
   audioCtx = new AudioContext({ sampleRate: RATE });
   const src = audioCtx.createMediaStreamSource(new MediaStream([track]));
@@ -176,13 +206,15 @@ function startAudio(s) {
   };
   src.connect(audioNode); audioNode.connect(audioCtx.destination); // destination keeps the node alive; it is muted upstream
 }
-function stopAudio() { if (audioNode) { audioNode.disconnect(); audioNode = null; } if (audioCtx) { audioCtx.close(); audioCtx = null; } }
+function stopAudio() { if (audioNode) { audioNode.disconnect(); audioNode = null; } if (audioCtx) { audioCtx.close(); audioCtx = null; } if (audioTrack) { audioTrack.stop(); audioTrack = null; } audioLabel = ''; }
 
 // ---------- capture ----------
 async function start() {
   try {
     if (selected) await host.selectSource(selected);
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 } }, audio: true });
+    const wantLoopback = $('#audio').checked && (await resolveAudioSource()) === 'loopback';
+    await host.setLoopback(wantLoopback);
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 } }, audio: wantLoopback });
   } catch (e) {
     try { stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 } }, audio: false }); }
     catch (e2) { $('#stat').textContent = 'ошибка захвата: ' + e2.message; return; }
@@ -227,7 +259,7 @@ function tick() {
     frames++; bytes += ab.byteLength;
     pctx.drawImage(work, 0, 0, preview.width, preview.height);
     const dt = (Date.now() - statT) / 1000;
-    if (dt >= 1) { $('#stat').textContent = w + '×' + h + ' · ' + (frames / dt).toFixed(1) + ' fps · ' + (bytes / dt / 1024 / 128).toFixed(2) + ' Мбит/с' + (audioNode ? ' · звук' : ''); frames = 0; bytes = 0; statT = Date.now(); }
+    if (dt >= 1) { $('#stat').textContent = w + '×' + h + ' · ' + (frames / dt).toFixed(1) + ' fps · ' + (bytes / dt / 1024 / 128).toFixed(2) + ' Мбит/с' + (audioNode ? ' · звук: ' + audioLabel : ''); frames = 0; bytes = 0; statT = Date.now(); }
   }, 'image/jpeg', Number($('#q').value) / 100);
 }
 
@@ -239,6 +271,7 @@ $('#q').onchange = persist;
 $('#size').onchange = () => { prevSmall = null; persist(); };
 for (const k of ['autostart', 'touch', 'autoconnect']) $('#' + k).onchange = persist;
 $('#audio').onchange = async () => { await persist(); if (running) restart(); };
+$('#asrc').onchange = async () => { await persist(); if (running) restart(); };
 $('#tcpmode').onchange = () => { $('#hostlbl').hidden = $('#tcpmode').value === 'usb'; };
 $('#tcpbtn').onclick = async () => {
   if ($('#tcpbtn').dataset.on) { await host.tcpDisconnect(); delete $('#tcpbtn').dataset.on; $('#tcpbtn').textContent = 'Подключить'; return; }
@@ -274,6 +307,7 @@ host.onServerError((m) => { $('#urls').innerHTML = '<span class="warn">Не уд
 (async () => {
   const info = await loadInfo();
   applySettingsToUI();
+  await loadAudioDevices();
   await loadSources();
   refreshUsb();
   if (info.autostart) start();

@@ -27,13 +27,15 @@ const BEACON_PORT = 7802;
 const APP_PORT = 7801;
 
 // ---------- settings ----------
-const DEFAULTS = { displayId: null, size: '1024x768', fps: 15, quality: 60, autostart: true, autoconnect: true, audio: true, touch: true };
+// audioSource: 'auto' (virtual cable such as "CABLE Output" if present, else whole system), 'loopback', or an audio input deviceId
+const DEFAULTS = { displayId: null, size: '1024x768', fps: 15, quality: 60, autostart: true, autoconnect: true, audio: true, audioSource: 'auto', touch: true };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() { try { settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) }; } catch (e) { /* first run */ } }
 function saveSettings(patch) { settings = { ...settings, ...patch }; try { fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2)); } catch (e) { console.error('settings:', e.message); } }
 
 let win = null;
+let wantLoopback = true; // renderer sets this right before getDisplayMedia (false when a virtual cable is captured instead)
 let selectedSourceId = null;
 let selectedDisplay = null; // Electron display object of the captured monitor (for touch mapping)
 
@@ -93,7 +95,8 @@ function mouseCmd(line) {
     if (!mouseHelper) {
       // A persistent PowerShell process: SetCursorPos + mouse_event per line, no native module needed.
       const script = `
-Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class M{[DllImport("user32.dll")]public static extern bool SetCursorPos(int x,int y);[DllImport("user32.dll")]public static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr e);}'
+Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class M{[DllImport("user32.dll")]public static extern bool SetCursorPos(int x,int y);[DllImport("user32.dll")]public static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr e);[DllImport("user32.dll")]public static extern bool SetProcessDpiAwarenessContext(IntPtr c);}'
+[M]::SetProcessDpiAwarenessContext([IntPtr]-4) | Out-Null   # per-monitor v2: SetCursorPos takes physical pixels
 while ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { break }; $p = $l.Split(' ');
   switch ($p[0]) { 'move' { [M]::SetCursorPos([int]$p[1],[int]$p[2]) } 'down' { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(2,0,0,0,[UIntPtr]::Zero) } 'up' { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(4,0,0,0,[UIntPtr]::Zero) } } }`;
       mouseHelper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
@@ -127,8 +130,15 @@ for line in sys.stdin:
 function onTouch(phase, nx, ny) {
   const d = selectedDisplay || screen.getPrimaryDisplay();
   const b = d.bounds;
-  const sf = process.platform === 'win32' ? d.scaleFactor : 1; // SetCursorPos wants physical pixels
-  const x = Math.round((b.x + nx * b.width) * sf), y = Math.round((b.y + ny * b.height) * sf);
+  let x, y;
+  if (process.platform === 'win32') {
+    // physical pixels: origin from nativeOrigin, size = DIP size * this monitor's scale factor
+    const o = d.nativeOrigin || { x: b.x * d.scaleFactor, y: b.y * d.scaleFactor };
+    x = Math.round(o.x + nx * b.width * d.scaleFactor);
+    y = Math.round(o.y + ny * b.height * d.scaleFactor);
+  } else {
+    x = Math.round(b.x + nx * b.width); y = Math.round(b.y + ny * b.height); // macOS: points
+  }
   mouseCmd((phase === 0 ? 'down' : phase === 2 ? 'up' : 'move') + ' ' + x + ' ' + y);
 }
 
@@ -323,8 +333,10 @@ app.whenReady().then(() => {
     const src = await pickSource();
     if (!src) return callback({});
     // 'loopback' = system audio (Windows only; Chromium on macOS has no loopback source).
-    callback(process.platform === 'win32' && settings.audio ? { video: src, audio: 'loopback' } : { video: src });
+    // The renderer asks for audio here only when the source is "whole system"; a virtual cable is captured via getUserMedia instead.
+    callback(process.platform === 'win32' && settings.audio && wantLoopback ? { video: src, audio: 'loopback' } : { video: src });
   });
+  for (const d of screen.getAllDisplays()) console.log('display', d.id, JSON.stringify(d.bounds), 'scale', d.scaleFactor, 'native', JSON.stringify(d.nativeOrigin || null), d.id === screen.getPrimaryDisplay().id ? 'primary' : '');
   createWindow();
   startServer();
   startDiscovery();
@@ -360,6 +372,7 @@ ipcMain.handle('get-info', async () => {
   return { ips, port: HTTP_PORT, urls, qr, platform: process.platform, settings, autostart: settings.autostart };
 });
 ipcMain.handle('save-settings', (e, patch) => { saveSettings(patch); return settings; });
+ipcMain.handle('set-loopback', (e, v) => { wantLoopback = !!v; return true; });
 ipcMain.handle('tcp-connect', (e, host, port) => { tcpConnect(host, port); return true; });
 ipcMain.handle('tcp-disconnect', () => { tcpDisconnect(); return true; });
 ipcMain.handle('usb-connect', (e, port) => { usbConnect(port); return true; });
