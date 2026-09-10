@@ -61,8 +61,11 @@ iOS разрешает только соединения *компьютер →
 На компьютере должен работать usbmuxd:
 
 - **macOS** — есть в системе.
-- **Windows** — его даёт iTunes (с сайта Apple или из Microsoft Store) или приложение
-  «Apple Devices» из Microsoft Store (служба «Apple Mobile Device Service»).
+- **Windows** — приложение «Apple Devices» из Microsoft Store (`winget install 9NP83LWLPZ9K --source msstore`).
+  Оно должно быть запущено хотя бы раз после подключения iPad: его фоновый процесс
+  AppleMobileDeviceProcess и есть usbmuxd (127.0.0.1:27015). Проверено на Windows 11.
+  Установка iTunes через winget сама по себе usbmuxd не даёт (компонент Mobile Device Support
+  не ставится).
 
 Проверка USB-слоя без iPad-приложения:
 
