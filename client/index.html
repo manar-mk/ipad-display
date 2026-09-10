@@ -14,29 +14,57 @@
   #msg { position: absolute; left: 0; right: 0; top: 40%; text-align: center; color: #bbb; font: 16px -apple-system, Helvetica, sans-serif; padding: 0 20px; }
   #msg b { color: #fff; display: block; font-size: 22px; margin-bottom: 8px; }
   #hud { position: absolute; left: 8px; top: 8px; color: #0f0; font: 12px Menlo, monospace; background: rgba(0,0,0,.6); padding: 4px 6px; border-radius: 4px; display: none; }
+  #snd { position: absolute; right: 8px; top: 8px; color: #fff; font: 12px -apple-system, Helvetica, sans-serif; background: rgba(0,0,0,.6); padding: 4px 8px; border-radius: 4px; display: none; }
 </style>
 </head>
 <body>
 <img id="screen" alt="">
 <div id="msg"><b>iPad Display</b>Подключение к компьютеру…</div>
 <div id="hud"></div>
+<div id="snd">🔈 тапните, чтобы включить звук</div>
 <script>
 (function () {
   var img = document.getElementById('screen');
   var msg = document.getElementById('msg');
   var hud = document.getElementById('hud');
+  var snd = document.getElementById('snd');
   var ws = null, retry = 1000, prevUrl = null, natW = 0, natH = 0;
   var frames = 0, bytes = 0, statT = +new Date(), hudOn = false, hudTimer = null;
   var hasObjectURL = !!(window.URL && URL.createObjectURL);
   var reader = hasObjectURL ? null : new FileReader();
+  var rect = { x: 0, y: 0, w: 1, h: 1 };
 
+  // ---------- audio (Web Audio, needs one tap on iOS) ----------
+  var AC = window.AudioContext || window.webkitAudioContext;
+  var actx = null, aRate = 22050, aCh = 1, aTime = 0, audioWanted = false;
+  function enableAudio() {
+    if (!AC || actx) return;
+    try { actx = new AC(); } catch (e) { return; }
+    // unlock on iOS: play a silent buffer inside the tap handler
+    var b = actx.createBuffer(1, 1, 22050), s = actx.createBufferSource(); s.buffer = b; s.connect(actx.destination); s.start(0);
+    audioWanted = true; snd.style.display = 'none';
+  }
+  function playPCM(ab) {
+    if (!actx || !audioWanted) return;
+    var i16 = new Int16Array(ab), n = i16.length / aCh;
+    var buf = actx.createBuffer(aCh, n, aRate);
+    for (var c = 0; c < aCh; c++) { var ch = buf.getChannelData(c); for (var i = 0; i < n; i++) ch[i] = i16[i * aCh + c] / 32768; }
+    var src = actx.createBufferSource(); src.buffer = buf; src.connect(actx.destination);
+    var now = actx.currentTime;
+    if (aTime < now + 0.05) aTime = now + 0.1;           // (re)start with 100 ms of headroom
+    if (aTime > now + 1.0) aTime = now + 0.2;            // fell behind: drop backlog
+    src.start(aTime); aTime += buf.duration;
+  }
+
+  // ---------- layout ----------
   function fit() {
     if (!natW || !natH) return;
     var W = window.innerWidth, H = window.innerHeight;
     var k = Math.min(W / natW, H / natH);
     var w = Math.round(natW * k), h = Math.round(natH * k);
+    rect = { x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w: w, h: h };
     img.style.width = w + 'px'; img.style.height = h + 'px';
-    img.style.left = Math.round((W - w) / 2) + 'px'; img.style.top = Math.round((H - h) / 2) + 'px';
+    img.style.left = rect.x + 'px'; img.style.top = rect.y + 'px';
   }
 
   function ack() { if (ws && ws.readyState === 1) ws.send('a'); }
@@ -46,41 +74,61 @@
     if (prevUrl && hasObjectURL) URL.revokeObjectURL(prevUrl);
     prevUrl = img.src;
     msg.style.display = 'none';
+    if (AC && !actx) snd.style.display = 'block';
     frames++;
     if (hudOn) {
       var dt = (+new Date() - statT) / 1000;
-      if (dt >= 1) { hud.textContent = natW + 'x' + natH + '  ' + (frames / dt).toFixed(1) + ' fps  ' + (bytes / dt / 1024).toFixed(0) + ' KB/s'; frames = 0; bytes = 0; statT = +new Date(); }
+      if (dt >= 1) { hud.textContent = natW + 'x' + natH + '  ' + (frames / dt).toFixed(1) + ' fps  ' + (bytes / dt / 1024).toFixed(0) + ' KB/s' + (actx ? '  audio' : ''); frames = 0; bytes = 0; statT = +new Date(); }
     }
     ack();
   };
   img.onerror = function () { ack(); };
 
-  function show(blob) {
+  function showJPEG(blob) {
     bytes += blob.size;
     if (hasObjectURL) { img.src = URL.createObjectURL(blob); }
     else { reader.onload = function () { img.src = reader.result; }; reader.readAsDataURL(blob); }
   }
 
+  // Typed binary message: [uint32 len][uint8 type][payload]
+  function onBinary(ab) {
+    var u8 = new Uint8Array(ab);
+    if (u8.length < 5) return;
+    var type = String.fromCharCode(u8[4]);
+    if (type === 'J') { showJPEG(new Blob([u8.subarray ? u8.subarray(5) : new Uint8Array(ab, 5)], { type: 'image/jpeg' })); }
+    else if (type === 'F') { var dv = new DataView(ab); aRate = dv.getUint32(5); aCh = u8[9] || 1; aTime = 0; }
+    else if (type === 'A') { playPCM(ab.slice(5)); }
+  }
+
   function connect() {
     var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
     try { ws = new WebSocket(proto + location.host + '/'); } catch (e) { return schedule(); }
-    ws.binaryType = 'blob';
+    ws.binaryType = 'arraybuffer';
     ws.onopen = function () { retry = 1000; ws.send('hello'); msg.innerHTML = '<b>iPad Display</b>Подключено. Ожидание изображения — нажмите «Старт» на компьютере.'; };
-    ws.onmessage = function (ev) {
-      if (typeof ev.data === 'string') return;
-      show(ev.data);
-    };
+    ws.onmessage = function (ev) { if (typeof ev.data !== 'string') onBinary(ev.data); };
     ws.onclose = function () { msg.style.display = ''; msg.innerHTML = '<b>iPad Display</b>Нет связи с компьютером. Переподключение…'; schedule(); };
     ws.onerror = function () { try { ws.close(); } catch (e) {} };
   }
   function schedule() { setTimeout(connect, retry); retry = Math.min(retry * 1.5, 5000); }
 
-  // Tap anywhere: show stats for 3 s. Block scrolling / bounce / zoom.
+  // ---------- touch -> host (as mouse) ----------
+  function sendTouch(phase, t) {
+    if (!ws || ws.readyState !== 1 || !rect.w) return;
+    var x = (t.clientX - rect.x) / rect.w, y = (t.clientY - rect.y) / rect.h;
+    x = Math.max(0, Math.min(1, x)); y = Math.max(0, Math.min(1, y));
+    ws.send(JSON.stringify({ t: 'touch', phase: phase, x: x, y: y }));
+  }
+  var hudTaps = 0, hudTapT = 0;
   document.addEventListener('touchstart', function (e) {
-    hudOn = true; hud.style.display = 'block'; frames = 0; bytes = 0; statT = +new Date();
-    clearTimeout(hudTimer); hudTimer = setTimeout(function () { hudOn = false; hud.style.display = 'none'; }, 3000);
+    e.preventDefault();
+    enableAudio();
+    var now = +new Date(); hudTaps = (now - hudTapT < 400) ? hudTaps + 1 : 1; hudTapT = now;
+    if (hudTaps >= 3) { hudOn = !hudOn; hud.style.display = hudOn ? 'block' : 'none'; frames = 0; bytes = 0; statT = now; } // triple tap: stats
+    sendTouch(0, e.changedTouches[0]);
   }, false);
-  document.addEventListener('touchmove', function (e) { e.preventDefault(); }, false);
+  document.addEventListener('touchmove', function (e) { e.preventDefault(); sendTouch(1, e.changedTouches[0]); }, false);
+  document.addEventListener('touchend', function (e) { e.preventDefault(); sendTouch(2, e.changedTouches[0]); }, false);
+  document.addEventListener('touchcancel', function (e) { sendTouch(2, e.changedTouches[0]); }, false);
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, false);
   window.addEventListener('resize', fit, false);
   window.addEventListener('orientationchange', function () { setTimeout(fit, 300); }, false);

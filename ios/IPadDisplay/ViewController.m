@@ -187,7 +187,7 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
     while (_freeBuffers.count && _pending.length) {
         AudioQueueBufferRef buf = [_freeBuffers.lastObject pointerValue];
         NSUInteger n = MIN((NSUInteger)buf->mAudioDataBytesCapacity, _pending.length);
-        memcpy(buf->mAudioData, _pending.bytes, n);
+        [_pending getBytes:buf->mAudioData range:NSMakeRange(0, n)];
         buf->mAudioDataByteSize = (UInt32)n;
         [_pending replaceBytesInRange:NSMakeRange(0, n) withBytes:NULL length:0];
         [_freeBuffers removeLastObject];

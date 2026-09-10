@@ -29,23 +29,29 @@
   .ok { color: #1f9d55; font-weight: 600; } .warn { color: #d9534f; font-weight: 600; }
   canvas#preview { width: 100%; max-height: 180px; background: #000; border-radius: 6px; object-fit: contain; }
   small { opacity: .7; }
+  pre.log { max-height: 120px; overflow: auto; font-size: 11px; background: rgba(0,0,0,.06); padding: 6px; border-radius: 6px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
 <h1>iPad Display — хост</h1>
 
 <div class="card">
-  <h2>1. Какой экран отправлять на iPad</h2>
+  <h2>1. Экран, который идёт на iPad</h2>
   <div class="sources" id="sources">загрузка…</div>
-  <small>Для режима «второй монитор» создайте виртуальный дисплей (см. README) и выберите его здесь. Если выбрать основной экран, iPad будет его зеркалом.</small>
+  <div class="row" id="vddrow" hidden>
+    <button class="secondary" id="vddbtn">Установить виртуальный монитор 1024×768</button>
+    <span class="stat" id="vddstat"></span>
+  </div>
+  <small>Для режима «второй монитор» нужен виртуальный дисплей: он выбирается автоматически (второй экран 4:3). Если его нет, кнопка выше поставит драйвер (запрос администратора). Выбор основного экрана даёт зеркало.</small>
+  <pre class="log" id="vddlog" hidden></pre>
 </div>
 
 <div class="card">
-  <h2>2. Качество</h2>
+  <h2>2. Качество и режим</h2>
   <div class="row">
     <label>Размер
       <select id="size">
-        <option value="1024x768" selected>1024×768 (iPad mini 1 / iPad 2)</option>
+        <option value="1024x768">1024×768 (iPad mini 1 / iPad 2)</option>
         <option value="1280x960">1280×960</option>
         <option value="2048x1536">2048×1536 (Retina)</option>
         <option value="0x0">без масштабирования</option>
@@ -55,6 +61,11 @@
     <label>JPEG <input type="range" id="q" min="30" max="95" value="60"> <span id="qv">60</span></label>
   </div>
   <div class="row">
+    <label><input type="checkbox" id="autostart"> запускать захват при старте</label>
+    <label><input type="checkbox" id="audio"> звук на iPad</label>
+    <label><input type="checkbox" id="touch"> касания с iPad как мышь</label>
+  </div>
+  <div class="row">
     <button class="primary" id="toggle">Старт</button>
     <span class="stat" id="stat">остановлено</span>
   </div>
@@ -62,63 +73,82 @@
 </div>
 
 <div class="card">
-  <h2>3a. Wi-Fi — откройте на iPad в Safari</h2>
-  <div class="conn">
-    <img id="qr" alt="QR">
-    <div>
-      <div id="urls">…</div>
-      <div style="margin-top:6px">Подключено с iPad: <span id="wsclients" class="stat">0</span></div>
-      <small>iPad и компьютер должны быть в одной сети. На iPad: Поделиться → «На экран Домой» — тогда страница откроется без строки адреса. Автоблокировку iPad поставьте «Никогда».</small>
-    </div>
-  </div>
-</div>
-
-<div class="card">
-  <h2>3b. Кабель USB (или Wi-Fi) — нативное приложение на iPad</h2>
+  <h2>3. Приложение на iPad (Wi-Fi автоматически, USB запасной)</h2>
+  <div class="row"><span>Состояние: <span id="tcpstat" class="stat">выкл</span></span></div>
+  <div class="row"><span>Найдено в сети: <span id="found" class="stat">пока никого</span></span> <span>USB: <span id="usbdevs" class="stat">…</span></span></div>
   <div class="row">
-    <label>Режим
+    <label><input type="checkbox" id="autoconnect"> подключаться автоматически</label>
+    <label>Вручную
       <select id="tcpmode">
-        <option value="usb" selected>USB (usbmuxd)</option>
-        <option value="tcp">TCP: Wi-Fi к приложению / iproxy</option>
+        <option value="usb">USB (usbmuxd)</option>
+        <option value="tcp">TCP / IP</option>
       </select>
     </label>
     <label id="hostlbl" hidden>Хост <input type="text" id="tcphost" value="127.0.0.1"></label>
     <label>Порт <input type="number" id="tcpport" value="7801"></label>
     <button class="secondary" id="tcpbtn">Подключить</button>
   </div>
-  <div class="row"><span id="tcpstat" class="stat">выкл</span></div>
-  <div class="row"><span>USB-устройства: <span id="usbdevs" class="stat">…</span></span></div>
-  <small>USB: на компьютере должен работать usbmuxd — на macOS он есть всегда, на Windows его даёт iTunes или приложение «Apple Devices». Отдельный iproxy не нужен. На iPad должно быть открыто приложение iPad Display (папка ios/).</small>
+  <small>Откройте «iPad Display» на iPad: в одной Wi-Fi сети хост находит его сам по UDP-маячку; по кабелю через usbmuxd (на Windows нужен iTunes с Apple Mobile Device Support).</small>
+</div>
+
+<div class="card">
+  <h2>4. Без приложения: Safari на iPad</h2>
+  <div class="conn">
+    <img id="qr" alt="QR">
+    <div>
+      <div id="urls">…</div>
+      <div style="margin-top:6px">Подключено браузеров: <span id="wsclients" class="stat">0</span></div>
+      <small>Поделиться → «На экран Домой» даёт полноэкранный режим. Звук в Safari включается тапом по экрану iPad.</small>
+    </div>
+  </div>
 </div>
 
 <script>
 const $ = (s) => document.querySelector(s);
-let sources = [], selected = null, running = false, stream = null, timer = null;
+let settings = {}, sources = [], selected = null, running = false, stream = null, timer = null;
 const video = document.createElement('video'); video.muted = true; video.playsInline = true;
 const work = document.createElement('canvas'), wctx = work.getContext('2d', { alpha: false });
 const small = document.createElement('canvas'); small.width = 48; small.height = 36; const sctx = small.getContext('2d', { alpha: false, willReadFrequently: true });
 const preview = $('#preview'), pctx = preview.getContext('2d', { alpha: false });
 let prevSmall = null, lastForced = 0, frames = 0, bytes = 0, statT = Date.now(), encoding = false;
+let audioCtx = null, audioNode = null;
+
+// ---------- settings <-> UI ----------
+function applySettingsToUI() {
+  $('#size').value = settings.size; $('#fps').value = settings.fps; $('#q').value = settings.quality; $('#qv').textContent = settings.quality;
+  for (const k of ['autostart', 'audio', 'touch', 'autoconnect']) $('#' + k).checked = !!settings[k];
+}
+function readSettingsFromUI() {
+  return { size: $('#size').value, fps: Number($('#fps').value) || 15, quality: Number($('#q').value) || 60,
+    autostart: $('#autostart').checked, audio: $('#audio').checked, touch: $('#touch').checked, autoconnect: $('#autoconnect').checked };
+}
+async function persist() { settings = await host.saveSettings(readSettingsFromUI()); }
 
 async function loadSources() {
   sources = await host.getSources();
   const box = $('#sources'); box.innerHTML = '';
-  sources.forEach((s, i) => {
-    const b = document.createElement('button'); b.className = 'src' + ((selected ? s.id === selected : i === 0) ? ' sel' : '');
-    b.innerHTML = '<img src="' + s.thumb + '"><div>' + s.name + '</div>';
+  let hasVirtual = false;
+  sources.forEach((s) => {
+    const b = document.createElement('button'); b.className = 'src' + (s.selected ? ' sel' : '');
+    const dim = s.bounds ? s.bounds.width + '×' + s.bounds.height : '';
+    if (s.bounds && Math.abs(s.bounds.width / s.bounds.height - 4 / 3) < 0.02) hasVirtual = true;
+    b.innerHTML = '<img src="' + s.thumb + '"><div>' + s.name + ' <small>' + dim + '</small></div>';
     b.onclick = () => { selected = s.id; host.selectSource(s.id); [...box.children].forEach(c => c.classList.remove('sel')); b.classList.add('sel'); if (running) restart(); };
+    if (s.selected) selected = s.id;
     box.appendChild(b);
   });
-  if (!selected && sources[0]) { selected = sources[0].id; host.selectSource(selected); }
+  $('#vddrow').hidden = hasVirtual || settings.platform === 'darwin';
 }
 
 async function loadInfo() {
   const info = await host.getInfo();
+  settings = { ...info.settings, platform: info.platform };
   $('#qr').src = info.qr || '';
   $('#urls').innerHTML = info.urls.length
     ? info.urls.map(u => '<div><code class="url" title="открыть в браузере для проверки">' + u + '</code></div>').join('')
     : '<span class="warn">Сетевой адрес не найден — подключите Wi-Fi/Ethernet</span>';
   document.querySelectorAll('.url').forEach(el => el.onclick = () => host.openExternal(el.textContent));
+  return info;
 }
 
 function targetSize(vw, vh) {
@@ -128,21 +158,46 @@ function targetSize(vw, vh) {
   return [Math.round(vw * k), Math.round(vh * k)];
 }
 
+// ---------- audio: system loopback -> 22050 Hz mono s16le chunks ----------
+function startAudio(s) {
+  const track = s.getAudioTracks()[0];
+  if (!track || !$('#audio').checked) return;
+  const RATE = 22050;
+  audioCtx = new AudioContext({ sampleRate: RATE });
+  const src = audioCtx.createMediaStreamSource(new MediaStream([track]));
+  audioNode = audioCtx.createScriptProcessor(2048, 1, 1);
+  host.sendAudioFormat(RATE, 1);
+  audioNode.onaudioprocess = (ev) => {
+    if (!running || !$('#audio').checked) return;
+    const f = ev.inputBuffer.getChannelData(0);
+    const out = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i++) { const v = Math.max(-1, Math.min(1, f[i])); out[i] = v < 0 ? v * 32768 : v * 32767; }
+    host.sendAudio(out.buffer);
+  };
+  src.connect(audioNode); audioNode.connect(audioCtx.destination); // destination keeps the node alive; it is muted upstream
+}
+function stopAudio() { if (audioNode) { audioNode.disconnect(); audioNode = null; } if (audioCtx) { audioCtx.close(); audioCtx = null; } }
+
+// ---------- capture ----------
 async function start() {
   try {
-    await host.selectSource(selected);
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 } }, audio: false });
-  } catch (e) { $('#stat').textContent = 'ошибка захвата: ' + e.message; return; }
-  video.srcObject = stream; await video.play();
+    if (selected) await host.selectSource(selected);
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 } }, audio: true });
+  } catch (e) {
+    try { stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 } }, audio: false }); }
+    catch (e2) { $('#stat').textContent = 'ошибка захвата: ' + e2.message; return; }
+  }
+  video.srcObject = new MediaStream(stream.getVideoTracks()); await video.play();
   running = true; prevSmall = null; frames = 0; bytes = 0; statT = Date.now();
   $('#toggle').textContent = 'Стоп'; $('#toggle').classList.add('stop');
+  startAudio(stream);
   schedule();
 }
 
 function schedule() { clearInterval(timer); timer = setInterval(tick, Math.max(16, 1000 / Number($('#fps').value || 15))); }
 
 function stop() {
-  running = false; clearInterval(timer);
+  running = false; clearInterval(timer); stopAudio();
   if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
   $('#toggle').textContent = 'Старт'; $('#toggle').classList.remove('stop'); $('#stat').textContent = 'остановлено';
 }
@@ -172,14 +227,18 @@ function tick() {
     frames++; bytes += ab.byteLength;
     pctx.drawImage(work, 0, 0, preview.width, preview.height);
     const dt = (Date.now() - statT) / 1000;
-    if (dt >= 1) { $('#stat').textContent = w + '×' + h + ' · ' + (frames / dt).toFixed(1) + ' fps · ' + (bytes / dt / 1024 / 128).toFixed(2) + ' Мбит/с'; frames = 0; bytes = 0; statT = Date.now(); }
+    if (dt >= 1) { $('#stat').textContent = w + '×' + h + ' · ' + (frames / dt).toFixed(1) + ' fps · ' + (bytes / dt / 1024 / 128).toFixed(2) + ' Мбит/с' + (audioNode ? ' · звук' : ''); frames = 0; bytes = 0; statT = Date.now(); }
   }, 'image/jpeg', Number($('#q').value) / 100);
 }
 
+// ---------- UI events ----------
 $('#toggle').onclick = () => running ? stop() : start();
-$('#fps').onchange = () => running && schedule();
-$('#q').oninput = () => $('#qv').textContent = $('#q').value;
-$('#size').onchange = () => { prevSmall = null; };
+$('#fps').onchange = () => { persist(); if (running) schedule(); };
+$('#q').oninput = () => { $('#qv').textContent = $('#q').value; };
+$('#q').onchange = persist;
+$('#size').onchange = () => { prevSmall = null; persist(); };
+for (const k of ['autostart', 'touch', 'autoconnect']) $('#' + k).onchange = persist;
+$('#audio').onchange = async () => { await persist(); if (running) restart(); };
 $('#tcpmode').onchange = () => { $('#hostlbl').hidden = $('#tcpmode').value === 'usb'; };
 $('#tcpbtn').onclick = async () => {
   if ($('#tcpbtn').dataset.on) { await host.tcpDisconnect(); delete $('#tcpbtn').dataset.on; $('#tcpbtn').textContent = 'Подключить'; return; }
@@ -187,21 +246,39 @@ $('#tcpbtn').onclick = async () => {
   else await host.tcpConnect($('#tcphost').value.trim(), Number($('#tcpport').value));
   $('#tcpbtn').dataset.on = '1'; $('#tcpbtn').textContent = 'Отключить';
 };
+$('#vddbtn').onclick = async () => {
+  $('#vddstat').textContent = 'установка… подтвердите запрос администратора';
+  const r = await host.installVdd();
+  $('#vddstat').textContent = r.error ? r.error : (r.code === 0 ? 'готово' : 'ошибка, код ' + r.code);
+  if (r.out) { $('#vddlog').hidden = false; $('#vddlog').textContent = r.out; }
+  setTimeout(loadSources, 3000);
+};
 async function refreshUsb() {
   const r = await host.usbList();
   const el = $('#usbdevs');
-  if (r.error) { el.textContent = r.error; el.className = 'stat warn'; return; }
+  if (r.error) { el.textContent = 'нет usbmuxd'; el.className = 'stat'; el.title = r.error; return; }
   el.className = 'stat ' + (r.devices.length ? 'ok' : '');
-  el.textContent = r.devices.length ? r.devices.map(d => d.serial).join(', ') : 'usbmuxd работает, iPad по кабелю не найден';
+  el.textContent = r.devices.length ? r.devices.map(d => d.serial.slice(0, 8) + '…').join(', ') : 'нет устройств';
 }
 host.onStatus((s) => {
   $('#wsclients').textContent = s.ws.length + (s.ws.length ? ' (' + s.ws.map(ip => ip.replace('::ffff:', '')).join(', ') + ')' : '');
   const map = { off: 'выкл', connecting: 'подключение…', connected: 'подключено', retrying: 'нет соединения, повтор…' };
-  const el = $('#tcpstat'); el.textContent = (map[s.tcp.state] || s.tcp.state) + (s.tcp.error ? ' — ' + s.tcp.error : ''); el.className = 'stat ' + (s.tcp.state === 'connected' ? 'ok' : s.tcp.state === 'retrying' ? 'warn' : '');
+  const el = $('#tcpstat');
+  const via = s.tcp.state === 'connected' ? (s.tcp.mode === 'usb' ? ' по USB' : ' по Wi-Fi (' + s.tcp.host + ')') : '';
+  el.textContent = (map[s.tcp.state] || s.tcp.state) + via + (s.tcp.error ? ' — ' + s.tcp.error : '');
+  el.className = 'stat ' + (s.tcp.state === 'connected' ? 'ok' : s.tcp.state === 'retrying' ? 'warn' : '');
+  $('#found').textContent = s.discovered.length ? s.discovered.join(', ') : 'пока никого';
 });
 host.onServerError((m) => { $('#urls').innerHTML = '<span class="warn">Не удалось запустить сервер: ' + m + '</span>'; });
 
-loadSources().then(loadInfo).then(async () => { if ((await host.getInfo()).autostart) start(); }); setInterval(loadInfo, 15000); refreshUsb(); setInterval(refreshUsb, 5000);
+(async () => {
+  const info = await loadInfo();
+  applySettingsToUI();
+  await loadSources();
+  refreshUsb();
+  if (info.autostart) start();
+})();
+setInterval(loadInfo, 15000); setInterval(refreshUsb, 5000); setInterval(() => { if (!running) loadSources(); }, 10000);
 </script>
 </body>
 </html>
