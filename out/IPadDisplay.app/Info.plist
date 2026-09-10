@@ -7,20 +7,20 @@
 	<key>CFBundleDisplayName</key>
 	<string>iPad Display</string>
 	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
+	<string>IPadDisplay</string>
 	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<string>com.manar.ipaddisplay</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>IPadDisplay</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.1</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>LSRequiresIPhoneOS</key>
+	<key>MinimumOSVersion</key><string>9.0</string><key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array><key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array><key>CFBundleSignature</key><string>????</string><key>DTPlatformName</key><string>iphoneos</string><key>DTSDKName</key><string>iphoneos9.3</string><key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIRequiresFullScreen</key>
 	<true/>
@@ -41,17 +41,6 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-	</array>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.manar.ipaddisplay</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>ipaddisplay</string>
-			</array>
-		</dict>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Receives the screen image from your computer over the local network or USB.</string>
