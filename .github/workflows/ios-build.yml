@@ -18,7 +18,7 @@ jobs:
       - name: Packages
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y ldid xz-utils zip libtinfo5 || sudo apt-get install -y ldid xz-utils zip
+          sudo apt-get install -y xz-utils zip libtinfo5 || sudo apt-get install -y xz-utils zip
 
       - name: iOS toolchain (clang + ld64)
         run: |
