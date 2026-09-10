@@ -57,8 +57,19 @@
         <option value="0x0">без масштабирования</option>
       </select>
     </label>
-    <label>FPS <input type="number" id="fps" value="15" min="1" max="60"></label>
+    <label>FPS <input type="number" id="fps" value="60" min="1" max="60"></label>
     <label>JPEG <input type="range" id="q" min="30" max="95" value="60"> <span id="qv">60</span></label>
+  </div>
+  <div class="row">
+    <label>Кодек для приложения
+      <select id="codec">
+        <option value="auto">авто (H.264, если доступен)</option>
+        <option value="h264">H.264 (аппаратный декодер iPad)</option>
+        <option value="jpeg">JPEG</option>
+      </select>
+    </label>
+    <label>битрейт <input type="number" id="bitrate" value="6000" min="500" max="30000" step="500"> кбит/с</label>
+    <span class="stat" id="vstat"></span>
   </div>
   <div class="row">
     <label><input type="checkbox" id="autostart"> запускать захват при старте</label>
@@ -117,10 +128,12 @@ let audioCtx = null, audioNode = null, audioTrack = null, audioLabel = '';
 // ---------- settings <-> UI ----------
 function applySettingsToUI() {
   $('#size').value = settings.size; $('#fps').value = settings.fps; $('#q').value = settings.quality; $('#qv').textContent = settings.quality;
+  $('#codec').value = settings.codec || 'auto'; $('#bitrate').value = settings.bitrate || 6000;
   for (const k of ['autostart', 'audio', 'touch', 'autoconnect']) $('#' + k).checked = !!settings[k];
 }
 function readSettingsFromUI() {
   return { size: $('#size').value, fps: Number($('#fps').value) || 15, quality: Number($('#q').value) || 60,
+    codec: $('#codec').value, bitrate: Number($('#bitrate').value) || 6000,
     autostart: $('#autostart').checked, audio: $('#audio').checked, audioSource: $('#asrc').value, touch: $('#touch').checked, autoconnect: $('#autoconnect').checked };
 }
 async function persist() { settings = await host.saveSettings(readSettingsFromUI()); }
@@ -211,6 +224,89 @@ async function startAudio(s) {
 }
 function stopAudio() { if (audioNode) { audioNode.disconnect(); audioNode = null; } if (audioCtx) { audioCtx.close(); audioCtx = null; } if (audioTrack) { audioTrack.stop(); audioTrack = null; } audioLabel = ''; }
 
+// ---------- H.264 for the native app (WebCodecs VideoEncoder, hardware when available) ----------
+let enc = null, encTimer = null, forceKey = true, encW = 0, encH = 0, h264Ok = null, vFrames = 0, vBytes = 0, vT = Date.now();
+const vwork = document.createElement('canvas'), vctx = vwork.getContext('2d', { alpha: false });
+let appConnected = false, wsCount = 0;
+const H264_CODEC = 'avc1.42E028'; // constrained baseline, level 4.0: enough for 1024x768 @ 60
+async function h264Available() {
+  if (h264Ok !== null) return h264Ok;
+  try {
+    if (typeof VideoEncoder === 'undefined') { h264Ok = false; return false; }
+    const r = await VideoEncoder.isConfigSupported({ codec: H264_CODEC, width: 1024, height: 768, framerate: 60, bitrate: 6000000, avc: { format: 'avc' }, latencyMode: 'realtime' });
+    h264Ok = !!r.supported;
+  } catch (e) { h264Ok = false; }
+  host.log('h264 encoder available: ' + h264Ok);
+  return h264Ok;
+}
+function useH264() { const c = $('#codec').value; return c === 'h264' || (c === 'auto' && h264Ok === true); }
+
+// Fallback chain: not every platform encoder accepts every profile / acceleration mode.
+const ENC_CONFIGS = [
+  { codec: 'avc1.42E028', hardwareAcceleration: 'prefer-hardware' },
+  { codec: 'avc1.4D0028', hardwareAcceleration: 'prefer-hardware' },
+  { codec: 'avc1.640028', hardwareAcceleration: 'prefer-hardware' },
+  { codec: 'avc1.42E028', hardwareAcceleration: 'no-preference' },
+  { codec: 'avc1.4D0028', hardwareAcceleration: 'no-preference' },
+  { codec: 'avc1.42E028', hardwareAcceleration: 'prefer-software' },
+  { codec: 'avc1.42E01F', hardwareAcceleration: 'no-preference', framerateCap: 30 },
+];
+let encCfgIdx = 0, encRetryAt = 0, encCfgName = '';
+function startEncoder(w, h) {
+  stopEncoder();
+  if (encCfgIdx >= ENC_CONFIGS.length) { encCfgIdx = 0; }
+  const cfg = ENC_CONFIGS[encCfgIdx];
+  encRetryAt = Date.now() + 1500;
+  enc = new VideoEncoder({
+    output: (chunk, meta) => {
+      if (meta && meta.decoderConfig && meta.decoderConfig.description) {
+        const d = meta.decoderConfig.description;
+        host.sendVideoConfig(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+      }
+      const buf = new ArrayBuffer(chunk.byteLength); chunk.copyTo(buf);
+      host.sendVideoChunk(buf, chunk.type === 'key', Math.round(chunk.timestamp / 1000));
+      vFrames++; vBytes += chunk.byteLength;
+    },
+    error: (e) => { host.log('encoder error (' + cfg.codec + '/' + cfg.hardwareAcceleration + '): ' + e.message); stopEncoder(); encCfgIdx++; },
+  });
+  const fr = Math.min(Number($('#fps').value) || 60, cfg.framerateCap || 60);
+  try {
+    enc.configure({ codec: cfg.codec, width: w, height: h, framerate: fr, bitrate: (Number($('#bitrate').value) || 6000) * 1000,
+      hardwareAcceleration: cfg.hardwareAcceleration, avc: { format: 'avc' }, latencyMode: 'realtime' });
+  } catch (e) { host.log('configure threw (' + cfg.codec + '): ' + e.message); stopEncoder(); encCfgIdx++; return; }
+  encW = w; encH = h; forceKey = true; encCfgName = cfg.codec + ' ' + cfg.hardwareAcceleration;
+  host.log('encoder configured ' + w + 'x' + h + ' ' + encCfgName);
+}
+function stopEncoder() { if (enc) { try { enc.close(); } catch (e) {} enc = null; } encW = encH = 0; }
+
+// One loop at the target fps: draws the capture into the work canvas and feeds the encoder.
+function videoTick() {
+  if (!running || !appConnected || !useH264() || video.videoWidth === 0) return;
+  const [w, h] = targetSize(video.videoWidth, video.videoHeight);
+  const ew = w & ~1, eh = h & ~1; // even dimensions for H.264
+  if (!enc || encW !== ew || encH !== eh) {
+    if (Date.now() < encRetryAt) return; // don't hammer a failing encoder
+    vwork.width = ew; vwork.height = eh; startEncoder(ew, eh);
+    if (!enc) return;
+  }
+  if (enc.state !== 'configured') return;
+  if (enc.encodeQueueSize > 2) return; // encoder is behind: skip this frame rather than queue latency
+  vctx.drawImage(video, 0, 0, ew, eh);
+  const frame = new VideoFrame(vwork, { timestamp: Math.round(performance.now() * 1000) });
+  try { enc.encode(frame, { keyFrame: forceKey }); forceKey = false; } catch (e) { host.log('encode: ' + e.message); }
+  frame.close();
+}
+host.onNeedKey(() => { forceKey = true; });
+setInterval(async () => {
+  if (!running) { $('#vstat').textContent = ''; return; }
+  const s = await host.videoStats();
+  const dt = (Date.now() - vT) / 1000; vT = Date.now();
+  const line = enc ? ('H.264 ' + encW + '×' + encH + ' · ' + (vFrames / dt).toFixed(0) + ' fps · ' + (vBytes * 8 / dt / 1e6).toFixed(1) + ' Мбит/с' + (s.dropped ? ' · пропущено ' + s.dropped : '') + ' · ' + encCfgName) : (useH264() ? 'H.264: ждёт подключения приложения' : 'JPEG');
+  $('#vstat').textContent = line;
+  if (enc && (Date.now() / 1000 | 0) % 5 === 0) host.log('video: ' + line);
+  vFrames = 0; vBytes = 0;
+}, 1000);
+
 // ---------- capture ----------
 async function start() {
   try {
@@ -223,16 +319,22 @@ async function start() {
     catch (e2) { $('#stat').textContent = 'ошибка захвата: ' + e2.message; return; }
   }
   video.srcObject = new MediaStream(stream.getVideoTracks()); await video.play();
+  await h264Available();
   running = true; prevSmall = null; frames = 0; bytes = 0; statT = Date.now();
   $('#toggle').textContent = 'Стоп'; $('#toggle').classList.add('stop');
   startAudio(stream);
   schedule();
 }
 
-function schedule() { clearInterval(timer); timer = setInterval(tick, Math.max(16, 1000 / Number($('#fps').value || 15))); }
+function schedule() {
+  clearInterval(timer); clearInterval(encTimer);
+  const period = Math.max(16, 1000 / Number($('#fps').value || 15));
+  timer = setInterval(tick, period);          // JPEG (Safari clients, or the app when H.264 is off)
+  encTimer = setInterval(videoTick, period);  // H.264 (native app)
+}
 
 function stop() {
-  running = false; clearInterval(timer); stopAudio();
+  running = false; clearInterval(timer); clearInterval(encTimer); stopAudio(); stopEncoder();
   if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
   $('#toggle').textContent = 'Старт'; $('#toggle').classList.remove('stop'); $('#stat').textContent = 'остановлено';
 }
@@ -240,6 +342,7 @@ async function restart() { stop(); await start(); }
 
 function tick() {
   if (!running || encoding || video.videoWidth === 0) return;
+  if (appConnected && useH264() && wsCount === 0) return; // the app gets H.264; nobody needs JPEG right now
   const [w, h] = targetSize(video.videoWidth, video.videoHeight);
   if (work.width !== w || work.height !== h) { work.width = w; work.height = h; prevSmall = null; }
   wctx.drawImage(video, 0, 0, w, h);
@@ -274,6 +377,8 @@ $('#q').onchange = persist;
 $('#size').onchange = () => { prevSmall = null; persist(); };
 for (const k of ['autostart', 'touch', 'autoconnect']) $('#' + k).onchange = persist;
 $('#audio').onchange = async () => { await persist(); if (running) restart(); };
+$('#codec').onchange = async () => { await persist(); stopEncoder(); };
+$('#bitrate').onchange = async () => { await persist(); stopEncoder(); };
 $('#asrc').onchange = async () => { await persist(); if (running) restart(); };
 $('#tcpmode').onchange = () => { $('#hostlbl').hidden = $('#tcpmode').value === 'usb'; };
 $('#tcpbtn').onclick = async () => {
@@ -297,6 +402,8 @@ async function refreshUsb() {
   el.textContent = r.devices.length ? r.devices.map(d => d.serial.slice(0, 8) + '…').join(', ') : 'нет устройств';
 }
 host.onStatus((s) => {
+  appConnected = s.tcp.state === 'connected'; wsCount = s.ws.length;
+  if (!appConnected) stopEncoder();
   $('#wsclients').textContent = s.ws.length + (s.ws.length ? ' (' + s.ws.map(ip => ip.replace('::ffff:', '')).join(', ') + ')' : '');
   const map = { off: 'выкл', connecting: 'подключение…', connected: 'подключено', retrying: 'нет соединения, повтор…' };
   const el = $('#tcpstat');

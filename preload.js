@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('host', {
   sendFrame: (arrayBuffer) => ipcRenderer.send('frame', arrayBuffer),
   sendAudioFormat: (rate, channels) => ipcRenderer.send('audio-format', rate, channels),
   sendAudio: (arrayBuffer) => ipcRenderer.send('audio', arrayBuffer),
+  sendVideoConfig: (arrayBuffer) => ipcRenderer.send('video-config', arrayBuffer),
+  sendVideoChunk: (arrayBuffer, key, ptsMs) => ipcRenderer.send('video-chunk', arrayBuffer, key, ptsMs),
+  videoStats: () => ipcRenderer.invoke('video-stats'),
+  onNeedKey: (cb) => ipcRenderer.on('need-key', (e, why) => cb(why)),
   onStatus: (cb) => ipcRenderer.on('status', (e, s) => cb(s)),
   onServerError: (cb) => ipcRenderer.on('server-error', (e, m) => cb(m)),
 });

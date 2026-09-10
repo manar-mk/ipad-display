@@ -28,7 +28,8 @@ const APP_PORT = 7801;
 
 // ---------- settings ----------
 // audioSource: 'auto' (virtual cable such as "CABLE Output" if present, else whole system), 'loopback', or an audio input deviceId
-const DEFAULTS = { displayId: null, size: '1024x768', fps: 15, quality: 60, autostart: true, autoconnect: true, audio: true, audioSource: 'auto', touch: true };
+// codec: 'auto' (H.264 to the native app when WebCodecs can encode it, JPEG otherwise), 'h264', 'jpeg'; bitrate in kbit/s
+const DEFAULTS = { displayId: null, size: '1024x768', fps: 60, quality: 60, autostart: true, autoconnect: true, audio: true, audioSource: 'auto', touch: true, codec: 'auto', bitrate: 6000 };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() { try { settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) }; } catch (e) { /* first run */ } }
@@ -72,6 +73,31 @@ function sendTcp() {
 }
 
 function audioFormatMsg() { const p = Buffer.alloc(5); p.writeUInt32BE(audioFormat.rate, 0); p[4] = audioFormat.channels; return frameMsg('F', p); }
+
+// ---------- H.264 to the native app: 'H' avcC config, 'V' frames ----------
+let videoConfig = null;   // Buffer (avcC), re-sent on every new connection
+let needKey = true;       // next frame we forward must be a keyframe (new connection / backlog / device request)
+const VIDEO_BACKLOG = 600 * 1024;
+const videoStats = { frames: 0, bytes: 0, dropped: 0, t: Date.now() };
+function requestKeyframe(why) { needKey = true; if (win && !win.isDestroyed()) win.webContents.send('need-key', why); }
+function onVideoConfig(buf) {
+  videoConfig = buf;
+  if (tcp.socket && tcp.state === 'connected') { tcp.socket.write(frameMsg('H', buf)); needKey = true; }
+}
+function onVideoChunk(buf, key, ptsMs) {
+  const s = tcp.socket;
+  if (!s || tcp.state !== 'connected' || !videoConfig) return;
+  if (needKey && !key) { videoStats.dropped++; return; }
+  if (s.writableLength > VIDEO_BACKLOG) { // network can't keep up: drop until the next keyframe
+    videoStats.dropped++;
+    if (!needKey) requestKeyframe('backlog');
+    return;
+  }
+  needKey = false;
+  const h = Buffer.alloc(5); h[0] = key ? 1 : 0; h.writeUInt32BE(ptsMs >>> 0, 1);
+  s.write(frameMsg('V', Buffer.concat([h, buf])));
+  videoStats.frames++; videoStats.bytes += buf.length;
+}
 
 function onAudioFormat(rate, channels) {
   audioFormat = { rate, channels };
@@ -188,6 +214,7 @@ function onDeviceData(d) {
     if (t === 0x53 /* S */) { if (tcp.rx.length < 5) return; onScroll(tcp.rx.readInt16BE(1), tcp.rx.readInt16BE(3)); tcp.rx = tcp.rx.subarray(5); continue; }
     if (t === 0x5a /* Z */) { if (tcp.rx.length < 3) return; onZoom(tcp.rx.readInt16BE(1)); tcp.rx = tcp.rx.subarray(3); continue; }
     if (t === 0x52 /* R */) { if (tcp.rx.length < 5) return; onRightClick(tcp.rx.readUInt16BE(1) / 65535, tcp.rx.readUInt16BE(3) / 65535); tcp.rx = tcp.rx.subarray(5); continue; }
+    if (t === 0x4b /* K */) { tcp.rx = tcp.rx.subarray(1); requestKeyframe('device'); continue; }
     tcp.rx = tcp.rx.subarray(1); // unknown byte: skip
   }
 }
@@ -223,6 +250,7 @@ async function tcpTry() {
   tcp.state = 'connected'; tcp.inflight = false; tcp.sentSeq = 0;
   notifyStatus();
   if (audioFormat) s.write(audioFormatMsg());
+  if (videoConfig) { s.write(frameMsg('H', videoConfig)); requestKeyframe('connect'); }
   sendTcp();
   s.on('data', onDeviceData);
   const drop = () => {
@@ -431,3 +459,6 @@ ipcMain.on('log', (e, msg) => console.log('[panel]', msg));
 ipcMain.on('frame', (e, ab) => onNewFrame(Buffer.from(ab)));
 ipcMain.on('audio-format', (e, rate, channels) => onAudioFormat(rate, channels));
 ipcMain.on('audio', (e, ab) => onAudioChunk(Buffer.from(ab)));
+ipcMain.on('video-config', (e, ab) => onVideoConfig(Buffer.from(ab)));
+ipcMain.on('video-chunk', (e, ab, key, ptsMs) => onVideoChunk(Buffer.from(ab), !!key, ptsMs | 0));
+ipcMain.handle('video-stats', () => { const dt = (Date.now() - videoStats.t) / 1000 || 1; const r = { fps: videoStats.frames / dt, kbps: videoStats.bytes * 8 / dt / 1000, dropped: videoStats.dropped, connected: tcp.state === 'connected' }; videoStats.frames = 0; videoStats.bytes = 0; videoStats.dropped = 0; videoStats.t = Date.now(); return r; });
