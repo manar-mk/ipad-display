@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>iPad Display</title>
+<!-- Written in ES5 on purpose: must run in Safari on iOS 9.3.5 (iPad mini 1 / iPad 2 / iPad 3). -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Display">
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; -webkit-user-select: none; -webkit-touch-callout: none; }
+  #screen { position: absolute; left: 0; top: 0; }
+  #msg { position: absolute; left: 0; right: 0; top: 40%; text-align: center; color: #bbb; font: 16px -apple-system, Helvetica, sans-serif; padding: 0 20px; }
+  #msg b { color: #fff; display: block; font-size: 22px; margin-bottom: 8px; }
+  #hud { position: absolute; left: 8px; top: 8px; color: #0f0; font: 12px Menlo, monospace; background: rgba(0,0,0,.6); padding: 4px 6px; border-radius: 4px; display: none; }
+</style>
+</head>
+<body>
+<img id="screen" alt="">
+<div id="msg"><b>iPad Display</b>Подключение к компьютеру…</div>
+<div id="hud"></div>
+<script>
+(function () {
+  var img = document.getElementById('screen');
+  var msg = document.getElementById('msg');
+  var hud = document.getElementById('hud');
+  var ws = null, retry = 1000, prevUrl = null, natW = 0, natH = 0;
+  var frames = 0, bytes = 0, statT = +new Date(), hudOn = false, hudTimer = null;
+  var hasObjectURL = !!(window.URL && URL.createObjectURL);
+  var reader = hasObjectURL ? null : new FileReader();
+
+  function fit() {
+    if (!natW || !natH) return;
+    var W = window.innerWidth, H = window.innerHeight;
+    var k = Math.min(W / natW, H / natH);
+    var w = Math.round(natW * k), h = Math.round(natH * k);
+    img.style.width = w + 'px'; img.style.height = h + 'px';
+    img.style.left = Math.round((W - w) / 2) + 'px'; img.style.top = Math.round((H - h) / 2) + 'px';
+  }
+
+  function ack() { if (ws && ws.readyState === 1) ws.send('a'); }
+
+  img.onload = function () {
+    if (img.naturalWidth !== natW || img.naturalHeight !== natH) { natW = img.naturalWidth; natH = img.naturalHeight; fit(); }
+    if (prevUrl && hasObjectURL) URL.revokeObjectURL(prevUrl);
+    prevUrl = img.src;
+    msg.style.display = 'none';
+    frames++;
+    if (hudOn) {
+      var dt = (+new Date() - statT) / 1000;
+      if (dt >= 1) { hud.textContent = natW + 'x' + natH + '  ' + (frames / dt).toFixed(1) + ' fps  ' + (bytes / dt / 1024).toFixed(0) + ' KB/s'; frames = 0; bytes = 0; statT = +new Date(); }
+    }
+    ack();
+  };
+  img.onerror = function () { ack(); };
+
+  function show(blob) {
+    bytes += blob.size;
+    if (hasObjectURL) { img.src = URL.createObjectURL(blob); }
+    else { reader.onload = function () { img.src = reader.result; }; reader.readAsDataURL(blob); }
+  }
+
+  function connect() {
+    var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    try { ws = new WebSocket(proto + location.host + '/'); } catch (e) { return schedule(); }
+    ws.binaryType = 'blob';
+    ws.onopen = function () { retry = 1000; ws.send('hello'); msg.innerHTML = '<b>iPad Display</b>Подключено. Ожидание изображения — нажмите «Старт» на компьютере.'; };
+    ws.onmessage = function (ev) {
+      if (typeof ev.data === 'string') return;
+      show(ev.data);
+    };
+    ws.onclose = function () { msg.style.display = ''; msg.innerHTML = '<b>iPad Display</b>Нет связи с компьютером. Переподключение…'; schedule(); };
+    ws.onerror = function () { try { ws.close(); } catch (e) {} };
+  }
+  function schedule() { setTimeout(connect, retry); retry = Math.min(retry * 1.5, 5000); }
+
+  // Tap anywhere: show stats for 3 s. Block scrolling / bounce / zoom.
+  document.addEventListener('touchstart', function (e) {
+    hudOn = true; hud.style.display = 'block'; frames = 0; bytes = 0; statT = +new Date();
+    clearTimeout(hudTimer); hudTimer = setTimeout(function () { hudOn = false; hud.style.display = 'none'; }, 3000);
+  }, false);
+  document.addEventListener('touchmove', function (e) { e.preventDefault(); }, false);
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, false);
+  window.addEventListener('resize', fit, false);
+  window.addEventListener('orientationchange', function () { setTimeout(fit, 300); }, false);
+
+  connect();
+})();
+</script>
+</body>
+</html>
