@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
     CFStringRef ident = CFStringCreateWithCString(NULL, argv[1], kCFStringEncodingUTF8);
     int r = SBSLaunchApplicationWithIdentifier(ident, false);
     if (r != 0) {
-        char buf[256] = "";
+        char buf[256]; buf[0] = 0;
         CFStringRef e = SBSApplicationLaunchingErrorString(r);
         if (e) CFStringGetCString(e, buf, sizeof buf, kCFStringEncodingUTF8);
         fprintf(stderr, "launch failed (%d): %s\n", r, buf);
