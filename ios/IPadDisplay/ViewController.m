@@ -1,6 +1,8 @@
 #import "ViewController.h"
 #import "FrameServer.h"
 #import <AudioToolbox/AudioToolbox.h>
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
 
 static const uint16_t kPort = 7801;
 static const int kAudioBuffers = 6;
@@ -25,6 +27,12 @@ static const int kAudioBuffers = 6;
     uint32_t _rate;
     uint8_t _channels;
     BOOL _audioStarted;
+    // H.264 video: hardware decode + display via AVSampleBufferDisplayLayer
+    AVSampleBufferDisplayLayer *_videoLayer;
+    CMVideoFormatDescriptionRef _videoFormat;
+    CGSize _videoSize;
+    BOOL _videoActive;   // last content shown was video (not a JPEG)
+    BOOL _waitKey;       // drop deltas until a keyframe arrives
 }
 
 - (void)viewDidLoad {
@@ -47,6 +55,14 @@ static const int kAudioBuffers = 6;
     self.screen.contentMode = UIViewContentModeScaleAspectFit;
     self.screen.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:self.screen];
+
+    _videoLayer = [AVSampleBufferDisplayLayer layer];
+    _videoLayer.videoGravity = AVLayerVideoGravityResizeAspect;
+    _videoLayer.backgroundColor = [UIColor blackColor].CGColor;
+    _videoLayer.frame = self.view.bounds;
+    _videoLayer.hidden = YES;
+    [self.view.layer addSublayer:_videoLayer];
+    _waitKey = YES;
 
     self.status = [[UILabel alloc] initWithFrame:CGRectInset(self.view.bounds, 30, 30)];
     self.status.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -90,11 +106,22 @@ static const int kAudioBuffers = 6;
 
 #pragma mark - touch -> host
 
-// Rect of the displayed image inside the aspect-fit image view.
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    _videoLayer.frame = self.view.bounds;
+    [CATransaction commit];
+}
+
+// Size of what is on screen: the video stream, or the last JPEG.
+- (CGSize)contentSize {
+    if (_videoActive && _videoSize.width > 0) return _videoSize;
+    return self.screen.image ? self.screen.image.size : CGSizeZero;
+}
+
+// Rect of the displayed content inside the aspect-fit view.
 - (CGRect)imageRect {
-    UIImage *img = self.screen.image;
-    if (!img) return CGRectZero;
-    CGSize v = self.screen.bounds.size, s = img.size;
+    CGSize v = self.screen.bounds.size, s = [self contentSize];
     if (s.width <= 0 || s.height <= 0) return CGRectZero;
     CGFloat k = MIN(v.width / s.width, v.height / s.height);
     CGFloat w = s.width * k, h = s.height * k;
@@ -135,7 +162,8 @@ static const int kAudioBuffers = 6;
 // points on screen -> pixels of the transmitted frame
 - (CGFloat)frameScale {
     CGRect r = [self imageRect];
-    return (r.size.width > 0 && self.screen.image) ? self.screen.image.size.width / r.size.width : 1;
+    CGSize s = [self contentSize];
+    return (r.size.width > 0 && s.width > 0) ? s.width / r.size.width : 1;
 }
 
 - (void)onPan:(UIPanGestureRecognizer *)g {
@@ -179,6 +207,7 @@ static const int kAudioBuffers = 6;
 - (void)frameServerDidDisconnect {
     self.screen.image = nil;
     [self stopAudio];
+    [self stopVideo];
     [self showWaiting];
 }
 
@@ -194,12 +223,87 @@ static const int kAudioBuffers = 6;
     }
     dispatch_async(dispatch_get_main_queue(), ^{
         if (decoded) {
+            if (_videoActive) [self stopVideo];
             self.screen.image = decoded;
             self.status.hidden = YES;
         }
         // Ack after the frame is committed for display.
         dispatch_async(dispatch_get_main_queue(), ^{ done(); });
     });
+}
+
+#pragma mark - H.264 video (AVSampleBufferDisplayLayer)
+
+static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
+
+// avcC record: [0]=1 [1..3]=profile/compat/level [4]=0xFC|lengthSize-1 [5]=0xE0|numSPS, (u16 len, SPS)*, numPPS, (u16 len, PPS)*
+- (void)frameServerDidReceiveVideoConfig:(NSData *)avcC {
+    const uint8_t *p = avcC.bytes;
+    NSUInteger n = avcC.length;
+    if (n < 7 || p[0] != 1) return;
+    NSUInteger i = 5;
+    uint8_t numSPS = p[i++] & 0x1f;
+    NSMutableArray *sets = [NSMutableArray array];
+    for (uint8_t k = 0; k < numSPS && i + 2 <= n; k++) { uint16_t l = be16(p + i); i += 2; if (i + l > n) return; [sets addObject:[NSData dataWithBytes:p + i length:l]]; i += l; }
+    if (i >= n) return;
+    uint8_t numPPS = p[i++];
+    for (uint8_t k = 0; k < numPPS && i + 2 <= n; k++) { uint16_t l = be16(p + i); i += 2; if (i + l > n) return; [sets addObject:[NSData dataWithBytes:p + i length:l]]; i += l; }
+    if (sets.count < 2) return;
+
+    const uint8_t *ptrs[8]; size_t sizes[8]; size_t cnt = MIN(sets.count, (NSUInteger)8);
+    for (size_t k = 0; k < cnt; k++) { NSData *d = sets[k]; ptrs[k] = d.bytes; sizes[k] = d.length; }
+    CMVideoFormatDescriptionRef fmt = NULL;
+    OSStatus st = CMVideoFormatDescriptionCreateFromH264ParameterSets(kCFAllocatorDefault, cnt, ptrs, sizes, 4, &fmt);
+    if (st != noErr || !fmt) return;
+    CMVideoDimensions dim = CMVideoFormatDescriptionGetDimensions(fmt);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (_videoFormat) CFRelease(_videoFormat);
+        _videoFormat = fmt;
+        _videoSize = CGSizeMake(dim.width, dim.height);
+        [_videoLayer flush];
+        _waitKey = YES;
+    });
+}
+
+- (void)frameServerDidReceiveVideoFrame:(NSData *)avcc keyframe:(BOOL)key pts:(uint32_t)ptsMs {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!_videoFormat) { [self.server sendKeyframeRequest]; return; }
+        if (_waitKey && !key) return;
+        _waitKey = NO;
+        if (_videoLayer.status == AVQueuedSampleBufferRenderingStatusFailed) { [_videoLayer flush]; _waitKey = YES; [self.server sendKeyframeRequest]; return; }
+
+        CMBlockBufferRef block = NULL;
+        size_t len = avcc.length;
+        if (CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, NULL, len, kCFAllocatorDefault, NULL, 0, len, 0, &block) != noErr) return;
+        [avcc enumerateByteRangesUsingBlock:^(const void *bytes, NSRange range, BOOL *stop) { CMBlockBufferReplaceDataBytes(bytes, block, range.location, range.length); }];
+
+        CMSampleBufferRef sample = NULL;
+        CMSampleTimingInfo timing;
+        timing.duration = CMTimeMake(1, 60);
+        timing.presentationTimeStamp = CMTimeMake(ptsMs, 1000);
+        timing.decodeTimeStamp = kCMTimeInvalid;
+        size_t sampleSize = len;
+        OSStatus st = CMSampleBufferCreate(kCFAllocatorDefault, block, true, NULL, NULL, _videoFormat, 1, 1, &timing, 1, &sampleSize, &sample);
+        CFRelease(block);
+        if (st != noErr || !sample) return;
+        CFArrayRef att = CMSampleBufferGetSampleAttachmentsArray(sample, true);
+        if (att && CFArrayGetCount(att) > 0) {
+            CFMutableDictionaryRef d = (CFMutableDictionaryRef)CFArrayGetValueAtIndex(att, 0);
+            CFDictionarySetValue(d, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
+            if (!key) CFDictionarySetValue(d, kCMSampleAttachmentKey_NotSync, kCFBooleanTrue);
+        }
+        if (!_videoActive) { _videoActive = YES; _videoLayer.hidden = NO; self.screen.hidden = YES; self.status.hidden = YES; }
+        [_videoLayer enqueueSampleBuffer:sample];
+        CFRelease(sample);
+    });
+}
+
+- (void)stopVideo {
+    _videoActive = NO;
+    _videoLayer.hidden = YES;
+    self.screen.hidden = NO;
+    [_videoLayer flush];
+    _waitKey = YES;
 }
 
 #pragma mark - audio playback (AudioQueue, PCM s16le)

@@ -189,6 +189,13 @@ static BOOL readFully(int fd, void *buf, size_t n) {
     [self writeBytes:msg length:sizeof(msg) toFd:fd];
 }
 
+- (void)sendKeyframeRequest {
+    int fd = _clientFd;
+    if (fd < 0) return;
+    uint8_t msg[1] = { 'K' };
+    [self writeBytes:msg length:1 toFd:fd];
+}
+
 - (void)readLoop:(int)fd {
     uint8_t header[4];
     NSMutableData *body = [NSMutableData data];
@@ -214,6 +221,11 @@ static BOOL readFully(int fd, void *buf, size_t n) {
             [d frameServerDidReceiveAudioFormat:rate channels:p[5]];
         } else if (type == 'A' && len > 1) {
             [d frameServerDidReceiveAudio:[body subdataWithRange:NSMakeRange(1, len - 1)]];
+        } else if (type == 'H' && len > 1) {
+            [d frameServerDidReceiveVideoConfig:[body subdataWithRange:NSMakeRange(1, len - 1)]];
+        } else if (type == 'V' && len > 6) {
+            uint32_t pts = ((uint32_t)p[2] << 24) | ((uint32_t)p[3] << 16) | ((uint32_t)p[4] << 8) | p[5];
+            [d frameServerDidReceiveVideoFrame:[body subdataWithRange:NSMakeRange(6, len - 6)] keyframe:(p[1] & 1) != 0 pts:pts];
         }
     }
     if (_clientFd == fd) {

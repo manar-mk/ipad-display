@@ -37,7 +37,7 @@ for m in "$SRC"/*.m; do
 done
 
 echo "LD  IPadDisplay"
-clang "${CFLAGS[@]}" -fuse-ld=ld -framework UIKit -framework Foundation -framework CoreGraphics -framework AudioToolbox -lobjc \
+clang "${CFLAGS[@]}" -fuse-ld=ld -framework UIKit -framework Foundation -framework CoreGraphics -framework AudioToolbox -framework AVFoundation -framework CoreMedia -lobjc \
   -Xlinker -ios_version_min -Xlinker 9.0 -o "$APP/IPadDisplay" "${objs[@]}"
 
 # Info.plist: expand the Xcode-style variables, add the keys a bare bundle needs.
