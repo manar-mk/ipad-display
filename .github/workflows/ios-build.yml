@@ -1,0 +1,42 @@
+name: ios-build
+
+# Builds IPadDisplay.app for armv7 / iOS 9 on a Linux runner (clang + cctools ld64 from
+# the theos Linux toolchain, iPhoneOS9.3.sdk from theos/sdks). No Mac needed.
+# The result is fake-signed with ldid and meant for a jailbroken device (/Applications).
+
+on:
+  push:
+    paths: ['ios/**', '.github/workflows/ios-build.yml']
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y ldid xz-utils zip libtinfo5 || sudo apt-get install -y ldid xz-utils zip
+
+      - name: iOS toolchain (clang + ld64)
+        run: |
+          mkdir -p tc
+          curl -sL https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz | tar -xJ -C tc
+          ls tc/linux/iphone/bin | tr '\n' ' '
+          tc/linux/iphone/bin/clang --version | head -1
+
+      - name: iPhoneOS9.3.sdk
+        run: |
+          git clone -q --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git sdks
+          cd sdks && git sparse-checkout set iPhoneOS9.3.sdk && ls iPhoneOS9.3.sdk
+
+      - name: Build
+        run: bash ios/build.sh "$PWD/tc/linux/iphone" "$PWD/sdks/iPhoneOS9.3.sdk" "$PWD/out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IPadDisplay.app
+          path: out/IPadDisplay.app.zip
+          if-no-files-found: error
