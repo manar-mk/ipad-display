@@ -2,3 +2,4 @@ node_modules/
 tools/*.log
 tools/*.jpg
 .DS_Store
+tools/*.ipa
