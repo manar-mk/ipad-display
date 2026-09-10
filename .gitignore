@@ -3,3 +3,4 @@ tools/*.log
 tools/*.jpg
 .DS_Store
 tools/*.ipa
+out/
