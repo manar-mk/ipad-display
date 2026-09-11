@@ -342,6 +342,13 @@ function onDeviceData(d) {
     if (t === 0x52 /* R */) { if (tcp.rx.length < 5) return; onRightClick(tcp.rx.readUInt16BE(1) / 65535, tcp.rx.readUInt16BE(3) / 65535); tcp.rx = tcp.rx.subarray(5); continue; }
     if (t === 0x4b /* K */) { tcp.rx = tcp.rx.subarray(1); requestKeyframe('device'); continue; }
     if (t === 0x50 /* P */) { if (tcp.rx.length < 5) return; onPresented(tcp.rx.readUInt32BE(1)); tcp.rx = tcp.rx.subarray(5); continue; }
+    if (t === 0x58 /* X */) { // declined: the user picked another host on the iPad
+      tcp.rx = tcp.rx.subarray(1);
+      declinedUntil.set(tcp.mode === 'usb' ? 'usb' : tcp.host, Date.now() + 60000);
+      tcp.error = 'iPad выбрал другой хост (повтор через минуту)';
+      const err = tcp.error; tcpDisconnect(); tcp.error = err; tcp.state = 'declined'; notifyStatus();
+      return;
+    }
     tcp.rx = tcp.rx.subarray(1); // unknown byte: skip
   }
 }
@@ -376,6 +383,7 @@ async function tcpTry() {
   s.setNoDelay(true);
   tcp.state = 'connected'; tcp.inflight = false; tcp.sentSeq = 0;
   notifyStatus();
+  s.write(frameMsg('N', Buffer.from(os.hostname(), 'utf8'))); // who we are, for the host picker on the iPad
   if (audioFormat) s.write(audioFormatMsg());
   if (encoderMode() === 'ffmpeg') { videoConfig = null; latencyMs = null; startExternal(); }
   else if (videoConfig) { s.write(frameMsg('H', videoConfig)); requestKeyframe('connect'); }
@@ -405,6 +413,7 @@ function tcpDisconnect() {
 
 // ---------- auto-connect: LAN beacon from the iPad app (Wi-Fi first), USB as fallback ----------
 const discovered = new Map(); // ip -> { port, seen }
+const declinedUntil = new Map(); // ip (or 'usb') -> timestamp until which we leave that iPad alone
 function startDiscovery() {
   const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
   sock.on('message', (msg, rinfo) => {
@@ -412,6 +421,9 @@ function startDiscovery() {
     if (!m) return;
     discovered.set(rinfo.address, { port: parseInt(m[1], 10), seen: Date.now() });
     notifyStatus();
+    // Answer with our name so the iPad can list hosts and let the user pick one.
+    sock.send(Buffer.from('IPADDISPLAY-HOST ' + os.hostname()), rinfo.port, rinfo.address);
+    if (declinedUntil.get(rinfo.address) > Date.now()) return; // the user chose another host on the iPad
     // The app only beacons while no host is connected, so a beacon means it is free: take it over Wi-Fi.
     if (settings.autoconnect && tcp.state !== 'connected' && !(tcp.mode === 'tcp' && tcp.host === rinfo.address && tcp.want)) {
       console.log('auto-connect Wi-Fi ->', rinfo.address);
@@ -430,6 +442,7 @@ function startDiscovery() {
     let devs = [];
     try { devs = await usbmux.listDevices(); } catch (e) { return; /* no usbmuxd on this machine */ }
     if (!devs.length) return;
+    if (declinedUntil.get('usb') > Date.now()) return; // the iPad declined us over USB a moment ago
     if (tcp.mode === 'usb' && (tcp.state === 'connected' || tcp.state === 'connecting')) return;
     if (tcp.mode === 'usb' && tcp.want && Date.now() - (tcp.since || 0) < 15000) return; // give the current USB attempt a chance
     if (Date.now() - usbFailedAt < 30000) return; // the app was not listening over USB a moment ago; retry later

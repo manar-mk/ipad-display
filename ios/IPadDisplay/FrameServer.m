@@ -19,6 +19,7 @@ static const uint16_t kBeaconPort = 7802;
     dispatch_queue_t _writeQueue;
     dispatch_source_t _acceptSource;
     dispatch_source_t _beaconTimer;
+    dispatch_source_t _beaconReader;
     BOOL _running;
 }
 
@@ -72,6 +73,7 @@ static const uint16_t kBeaconPort = 7802;
     _running = NO;
     if (_acceptSource) { dispatch_source_cancel(_acceptSource); _acceptSource = nil; }
     if (_beaconTimer) { dispatch_source_cancel(_beaconTimer); _beaconTimer = nil; }
+    if (_beaconReader) { dispatch_source_cancel(_beaconReader); _beaconReader = nil; }
     if (_listenFd >= 0) { close(_listenFd); _listenFd = -1; }
     if (_beaconFd >= 0) { close(_beaconFd); _beaconFd = -1; }
     [self dropClient];
@@ -81,6 +83,16 @@ static const uint16_t kBeaconPort = 7802;
     int fd = _clientFd;
     _clientFd = -1;
     if (fd >= 0) { shutdown(fd, SHUT_RDWR); close(fd); }
+}
+
+- (void)disconnectClient {
+    if (_clientFd < 0) return;
+    int fd = _clientFd;
+    uint8_t x = 'X';
+    send(fd, &x, 1, 0); // tell the host not to retry for a while
+    [self dropClient];
+    id<FrameServerDelegate> d = self.delegate;
+    dispatch_async(dispatch_get_main_queue(), ^{ [d frameServerDidDisconnect]; });
 }
 
 #pragma mark - LAN discovery beacon
@@ -95,6 +107,26 @@ static const uint16_t kBeaconPort = 7802;
     dispatch_source_set_timer(_beaconTimer, dispatch_time(DISPATCH_TIME_NOW, 0), 2 * NSEC_PER_SEC, NSEC_PER_SEC / 4);
     dispatch_source_set_event_handler(_beaconTimer, ^{ [weakSelf sendBeacon]; });
     dispatch_resume(_beaconTimer);
+
+    // hosts answer our beacon with "IPADDISPLAY-HOST <name>"
+    _beaconReader = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, _beaconFd, 0, _acceptQueue);
+    dispatch_source_set_event_handler(_beaconReader, ^{ [weakSelf readBeaconReply]; });
+    dispatch_resume(_beaconReader);
+}
+
+- (void)readBeaconReply {
+    char buf[512];
+    struct sockaddr_in from;
+    socklen_t flen = sizeof(from);
+    ssize_t n = recvfrom(_beaconFd, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&from, &flen);
+    if (n <= 0) return;
+    buf[n] = 0;
+    NSString *msg = [[NSString alloc] initWithBytes:buf length:(NSUInteger)n encoding:NSUTF8StringEncoding];
+    if (![msg hasPrefix:@"IPADDISPLAY-HOST "]) return;
+    NSString *name = [[msg substringFromIndex:17] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *ip = @(inet_ntoa(from.sin_addr));
+    id<FrameServerDelegate> d = self.delegate;
+    dispatch_async(dispatch_get_main_queue(), ^{ [d frameServerDidSeeHost:name address:ip]; });
 }
 
 - (void)sendBeacon {
@@ -122,11 +154,21 @@ static const uint16_t kBeaconPort = 7802;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
     setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
 
+    // host selection: USB (loopback via usbmuxd) is always fine; over Wi-Fi only the preferred host, if one is set
+    NSString *peerIp = @(inet_ntoa(peer.sin_addr));
+    NSString *pref = self.preferredHost;
+    if (pref.length && ![peerIp isEqualToString:pref] && ![peerIp isEqualToString:@"127.0.0.1"]) {
+        uint8_t x = 'X';
+        send(fd, &x, 1, 0);
+        shutdown(fd, SHUT_RDWR); close(fd);
+        return;
+    }
+
     // one host at a time: a new connection replaces the old one
     [self dropClient];
     _clientFd = fd;
 
-    NSString *peerStr = [NSString stringWithFormat:@"%s:%d", inet_ntoa(peer.sin_addr), ntohs(peer.sin_port)];
+    NSString *peerStr = [NSString stringWithFormat:@"%@:%d", peerIp, ntohs(peer.sin_port)];
     id<FrameServerDelegate> d = self.delegate;
     dispatch_async(dispatch_get_main_queue(), ^{ [d frameServerDidConnect:peerStr]; });
 
@@ -228,6 +270,9 @@ static BOOL readFully(int fd, void *buf, size_t n) {
             [d frameServerDidReceiveAudioFormat:rate channels:p[5]];
         } else if (type == 'A' && len > 1) {
             [d frameServerDidReceiveAudio:[body subdataWithRange:NSMakeRange(1, len - 1)]];
+        } else if (type == 'N' && len > 1) {
+            NSString *name = [[NSString alloc] initWithData:[body subdataWithRange:NSMakeRange(1, len - 1)] encoding:NSUTF8StringEncoding];
+            if (name) dispatch_async(dispatch_get_main_queue(), ^{ [d frameServerDidReceiveHostName:name]; });
         } else if (type == 'H' && len > 1) {
             [d frameServerDidReceiveVideoConfig:[body subdataWithRange:NSMakeRange(1, len - 1)]];
         } else if (type == 'V' && len > 6) {

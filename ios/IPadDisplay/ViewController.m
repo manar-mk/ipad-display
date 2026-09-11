@@ -14,6 +14,10 @@ static const int kAudioBuffers = 6;
 @end
 
 @implementation ViewController {
+    // host selection: hosts seen on the LAN (ip -> name), the connected peer, the picker button
+    NSMutableDictionary *_hosts;
+    NSString *_peerIp;
+    UIButton *_hostBtn;
     // touch state: one finger drives the mouse, two fingers scroll / pinch
     BOOL _multi, _mouseDown;
     UITouch *_mouseTouch;
@@ -82,9 +86,23 @@ static const int kAudioBuffers = 6;
 
     _pending = [NSMutableData data];
     _freeBuffers = [NSMutableArray array];
+    _hosts = [NSMutableDictionary dictionary];
+
+    // host picker: a button on the waiting screen, and a three-finger tap at any time
+    _hostBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    _hostBtn.frame = CGRectMake(20, 20, 320, 36);
+    _hostBtn.titleLabel.font = [UIFont systemFontOfSize:16];
+    _hostBtn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    [_hostBtn addTarget:self action:@selector(showHostPicker) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:_hostBtn];
+    UITapGestureRecognizer *three = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(showHostPicker)];
+    three.numberOfTouchesRequired = 3; three.cancelsTouchesInView = NO; three.delegate = self;
+    [self.view addGestureRecognizer:three];
 
     self.server = [[FrameServer alloc] initWithPort:kPort];
     self.server.delegate = self;
+    self.server.preferredHost = [[NSUserDefaults standardUserDefaults] stringForKey:@"preferredHost"];
+    [self updateHostButton];
     NSError *err = nil;
     if (![self.server start:&err]) {
         self.status.text = [NSString stringWithFormat:@"Не удалось открыть порт %d: %@", kPort, err.localizedDescription];
@@ -99,11 +117,14 @@ static const int kAudioBuffers = 6;
 - (void)showWaiting {
     if (self.screen.image) return;
     NSString *ip = [FrameServer wifiAddress] ?: @"нет Wi-Fi";
+    NSString *pref = self.server.preferredHost;
     self.status.hidden = NO;
     self.status.text = [NSString stringWithFormat:
         @"iPad Display\n\nОжидание компьютера…\n\n"
         @"Wi-Fi: iPad виден хосту автоматически (адрес %@, порт %d).\n"
-        @"USB: подключите кабель, хост найдёт iPad через usbmuxd.", ip, kPort];
+        @"USB: подключите кабель, хост найдёт iPad через usbmuxd.\n\n%@",
+        ip, kPort, pref.length ? [NSString stringWithFormat:@"Принимается только хост %@ (и любой по USB). Сменить: кнопка вверху или тап тремя пальцами.", [self hostLabel:pref]] : @"Принимается любой хост. Выбрать конкретный: кнопка вверху или тап тремя пальцами."];
+    [self updateHostButton];
 }
 
 - (BOOL)prefersStatusBarHidden { return YES; }
@@ -203,13 +224,65 @@ static const int kAudioBuffers = 6;
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)a shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)b { return YES; }
 
+#pragma mark - host selection
+
+- (NSString *)hostLabel:(NSString *)ip { NSString *n = _hosts[ip]; return n.length ? [NSString stringWithFormat:@"%@ (%@)", n, ip] : ip; }
+
+- (void)updateHostButton {
+    NSString *pref = self.server.preferredHost;
+    NSString *t = pref.length ? [NSString stringWithFormat:@"Хост: %@ ▾", [self hostLabel:pref]] : @"Хост: любой ▾";
+    [_hostBtn setTitle:t forState:UIControlStateNormal];
+    _hostBtn.hidden = _videoActive || self.screen.image != nil;
+}
+
+- (void)frameServerDidSeeHost:(NSString *)name address:(NSString *)ip {
+    if (![_hosts[ip] isEqualToString:name]) { _hosts[ip] = name; [self updateHostButton]; }
+}
+
+- (void)frameServerDidReceiveHostName:(NSString *)name {
+    if (_peerIp.length && ![_peerIp isEqualToString:@"127.0.0.1"]) { _hosts[_peerIp] = name; [self updateHostButton]; }
+    if (!self.status.hidden) self.status.text = [NSString stringWithFormat:@"Подключено: %@\nОжидание изображения…", [self hostLabel:_peerIp ?: @""]];
+}
+
+- (void)choosePreferredHost:(NSString *)ip {
+    self.server.preferredHost = ip;
+    if (ip.length) [[NSUserDefaults standardUserDefaults] setObject:ip forKey:@"preferredHost"];
+    else [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"preferredHost"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    // connected to someone else over Wi-Fi? drop them so the chosen host can take over
+    if (ip.length && _peerIp.length && ![_peerIp isEqualToString:ip] && ![_peerIp isEqualToString:@"127.0.0.1"]) [self.server disconnectClient];
+    [self updateHostButton];
+    [self showWaiting];
+}
+
+- (void)showHostPicker {
+    if (self.presentedViewController) return;
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Какой компьютер показывать"
+        message:@"USB-подключение принимается всегда. По Wi-Fi — только выбранный хост."
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    NSString *pref = self.server.preferredHost;
+    [ac addAction:[UIAlertAction actionWithTitle:(pref.length ? @"Любой хост" : @"✓ Любой хост") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { [self choosePreferredHost:nil]; }]];
+    NSArray *ips = [_hosts.allKeys sortedArrayUsingSelector:@selector(compare:)];
+    for (NSString *ip in ips) {
+        NSString *title = [NSString stringWithFormat:@"%@%@", [ip isEqualToString:pref] ? @"✓ " : @"", [self hostLabel:ip]];
+        [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { [self choosePreferredHost:ip]; }]];
+    }
+    if (!ips.count) [ac addAction:[UIAlertAction actionWithTitle:@"(хосты в сети не найдены — запустите хост)" style:UIAlertActionStyleDefault handler:nil]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Отмена" style:UIAlertActionStyleCancel handler:nil]];
+    ac.popoverPresentationController.sourceView = self.view;
+    ac.popoverPresentationController.sourceRect = _hostBtn.hidden ? CGRectMake(self.view.bounds.size.width / 2, 40, 1, 1) : _hostBtn.frame;
+    [self presentViewController:ac animated:YES completion:nil];
+}
+
 #pragma mark - FrameServerDelegate
 
 - (void)frameServerDidConnect:(NSString *)peer {
-    self.status.text = [NSString stringWithFormat:@"Подключено: %@\nОжидание изображения — нажмите «Старт» на компьютере.", peer];
+    _peerIp = [[peer componentsSeparatedByString:@":"] firstObject];
+    self.status.text = [NSString stringWithFormat:@"Подключено: %@\nОжидание изображения…", [self hostLabel:_peerIp]];
 }
 
 - (void)frameServerDidDisconnect {
+    _peerIp = nil;
     self.screen.image = nil;
     [self stopAudio];
     [self stopVideo];
@@ -231,6 +304,7 @@ static const int kAudioBuffers = 6;
             if (_videoActive) [self stopVideo];
             self.screen.image = decoded;
             self.status.hidden = YES;
+            _hostBtn.hidden = YES;
         }
         // Ack after the frame is committed for display.
         dispatch_async(dispatch_get_main_queue(), ^{ done(); });
@@ -299,7 +373,7 @@ static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); 
     }
     if (!_videoActive) {
         _videoActive = YES;
-        dispatch_async(dispatch_get_main_queue(), ^{ _videoLayer.hidden = NO; self.screen.hidden = YES; self.status.hidden = YES; });
+        dispatch_async(dispatch_get_main_queue(), ^{ _videoLayer.hidden = NO; self.screen.hidden = YES; self.status.hidden = YES; _hostBtn.hidden = YES; });
     }
     [_videoLayer enqueueSampleBuffer:sample];
     CFRelease(sample);

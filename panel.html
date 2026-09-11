@@ -433,7 +433,7 @@ host.onStatus((s) => {
   appConnected = s.tcp.state === 'connected'; wsCount = s.ws.length;
   if (!appConnected) stopEncoder();
   $('#wsclients').textContent = s.ws.length + (s.ws.length ? ' (' + s.ws.map(ip => ip.replace('::ffff:', '')).join(', ') + ')' : '');
-  const map = { off: 'выкл', connecting: 'подключение…', connected: 'подключено', retrying: 'нет соединения, повтор…' };
+  const map = { off: 'выкл', connecting: 'подключение…', connected: 'подключено', retrying: 'нет соединения, повтор…', declined: 'отклонено' };
   const el = $('#tcpstat');
   const via = s.tcp.state === 'connected' ? (s.tcp.mode === 'usb' ? ' по USB' : ' по Wi-Fi (' + s.tcp.host + ')') : '';
   el.textContent = (map[s.tcp.state] || s.tcp.state) + via + (s.tcp.error ? ' — ' + s.tcp.error : '');

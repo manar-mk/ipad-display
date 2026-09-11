@@ -8,6 +8,7 @@
 //   'A'  audio PCM chunk (s16le interleaved)
 //   'H'  H.264 decoder config: avcC record (SPS/PPS), sent before the first video frame
 //   'V'  H.264 frame: [uint8 flags bit0=keyframe][uint32 BE pts ms][AVCC NAL units, 4-byte length prefixed]
+//   'N'  host name (UTF-8), sent right after connecting
 // Device -> host: [uint8 type][payload]
 //   0x01 frame ack
 //   'T'  touch: [uint8 phase 0=down 1=move 2=up][uint16 BE x][uint16 BE y]  (x,y in 0..65535 of the frame)
@@ -16,7 +17,9 @@
 //   'R'  right click (long press): [uint16 BE x][uint16 BE y]
 //   'K'  please send a keyframe (decoder lost sync)
 //   'P'  presented: [uint32 BE pts ms] of the video frame just handed to the display (latency probe)
-// Discovery: every 2 s the device broadcasts UDP "IPADDISPLAY <tcpPort>" to 255.255.255.255:7802.
+//   'X'  declined: the user picked another host; the host should stop auto-connecting for a while
+// Discovery: every 2 s the device broadcasts UDP "IPADDISPLAY <tcpPort>" to 255.255.255.255:7802; hosts answer
+// to the sender with "IPADDISPLAY-HOST <name>", which is how the device learns which hosts are around.
 //
 // Transport: USB via usbmuxd or plain Wi-Fi; the app does not care which.
 
@@ -30,14 +33,21 @@
 // H.264: avcC record, then AVCC frames. Both called on the read queue.
 - (void)frameServerDidReceiveVideoConfig:(NSData *)avcC;
 - (void)frameServerDidReceiveVideoFrame:(NSData *)avcc keyframe:(BOOL)key pts:(uint32_t)ptsMs;
+// Host discovery / selection (all on the main queue)
+- (void)frameServerDidSeeHost:(NSString *)name address:(NSString *)ip;   // UDP reply to our beacon
+- (void)frameServerDidReceiveHostName:(NSString *)name;                  // 'N' on the live connection
 @end
 
 @interface FrameServer : NSObject
 @property (nonatomic, weak) id<FrameServerDelegate> delegate;
 @property (nonatomic, readonly) uint16_t port;
+// nil = accept any host. Otherwise only this IP is accepted (USB connections arrive from 127.0.0.1 and are
+// always accepted: the cable is an explicit choice). Others get 'X' and are closed.
+@property (atomic, copy) NSString *preferredHost;
 - (instancetype)initWithPort:(uint16_t)port;
 - (BOOL)start:(NSError **)error;
 - (void)stop;
+- (void)disconnectClient; // drop the current host (e.g. the user picked another one)
 - (void)sendTouchPhase:(uint8_t)phase x:(uint16_t)x y:(uint16_t)y;
 - (void)sendScrollDx:(int16_t)dx dy:(int16_t)dy;
 - (void)sendZoomDelta:(int16_t)delta;
