@@ -29,7 +29,7 @@ const APP_PORT = 7801;
 // ---------- settings ----------
 // audioSource: 'auto' (virtual cable such as "CABLE Output" if present, else whole system), 'loopback', or an audio input deviceId
 // codec: 'auto' (H.264 to the native app when WebCodecs can encode it, JPEG otherwise), 'h264', 'jpeg'; bitrate in kbit/s
-const DEFAULTS = { displayId: null, size: '1024x768', fps: 60, quality: 60, autostart: true, autoconnect: true, audio: true, audioSource: 'auto', touch: true, codec: 'auto', bitrate: 6000 };
+const DEFAULTS = { displayId: null, size: '1024x768', fps: 60, quality: 60, autostart: true, autoconnect: true, audio: true, audioSource: 'auto', touch: true, codec: 'auto', bitrate: 6000, manageDisplay: true, manageAudio: true, audioDefault: false };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() { try { settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) }; } catch (e) { /* first run */ } }
@@ -129,6 +129,52 @@ async function startExternal() {
   console.log('[ffmpeg] started on capture output', idx);
 }
 function stopExternal() { ext.active = false; clearTimeout(ext.restartTimer); if (ext.enc) ext.enc.stop(); stopExternalAudio(); }
+
+// ---------- Windows session: attach/detach the virtual monitor, move the default sound device ----------
+// On Windows the virtual display is an installed driver and the cable is a permanent device: without this
+// they stay in the system after the host stops (a phantom screen, sound going nowhere). On macOS the virtual
+// display lives only while the vdisplay helper runs, so nothing to undo there.
+const WIN = process.platform === 'win32';
+const SESSION_PS = path.join(__dirname, 'driver', 'windows', 'session.ps1');
+let sessionOn = false;
+function runSession(action, sync) {
+  if (!WIN) return Promise.resolve('');
+  const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SESSION_PS, '-Action', action];
+  if (sync) {
+    try { const r = require('child_process').spawnSync('powershell.exe', args, { windowsHide: true, encoding: 'utf8', timeout: 20000 }); console.log('[session]', action, ((r.stdout || '') + (r.stderr || '')).trim()); } catch (e) { console.error('[session]', action, e.message); }
+    return Promise.resolve('');
+  }
+  return new Promise((resolve) => {
+    const p = spawn('powershell.exe', args, { windowsHide: true });
+    let out = '';
+    p.stdout.on('data', (d) => { out += d; });
+    p.stderr.on('data', (d) => { out += d; });
+    p.on('exit', () => { console.log('[session]', action, out.trim()); resolve(out.trim()); });
+    p.on('error', (e) => { console.error('[session]', action, e.message); resolve(''); });
+    setTimeout(() => { try { p.kill(); } catch (e) { /* gone */ } resolve(''); }, 25000);
+  });
+}
+function sessionHint(text) { if (win && !win.isDestroyed()) win.webContents.send('session-hint', text); }
+async function sessionStart() {
+  if (!WIN || sessionOn) return;
+  sessionOn = true;
+  sessionHint('');
+  if (settings.manageDisplay) await runSession('attach');
+  if (settings.manageAudio) await runSession('audio-show');
+  if (settings.audioDefault) {
+    const r = await runSession('audio-cable');
+    // some vendor audio panels (Nahimic, Realtek, SteelSeries Sonar) force their own default device back
+    if (/to-cable-failed/.test(r)) sessionHint('Не удалось сделать «iPad Display» устройством по умолчанию: его возвращает звуковая утилита (Nahimic/Realtek). Назначьте нужное приложение на кабель в «Микшер громкости» или закройте утилиту.');
+  }
+}
+async function sessionStop(sync, why) {
+  if (!WIN || !sessionOn) return;
+  console.log('[session] stop (' + (why || '?') + ')');
+  sessionOn = false;
+  if (settings.audioDefault) await runSession('audio-restore', sync);
+  if (settings.manageAudio) await runSession('audio-hide', sync);
+  if (settings.manageDisplay) await runSession('detach', sync);
+}
 
 // ffmpeg capture (dshow / avfoundation) of the virtual cable for the app (see onAudioChunk); the renderer path stays for Safari.
 const CABLE_RE = /CABLE Output|VB-Audio|Virtual Cable|BlackHole|iPad/i; // VB-CABLE on Windows, BlackHole on macOS
@@ -570,7 +616,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => { app.quit(); });
-app.on('will-quit', () => { if (mouseHelper) mouseHelper.kill(); stopExternal(); stopVdisplay(); });
+app.on('will-quit', () => { if (mouseHelper) mouseHelper.kill(); stopExternal(); stopVdisplay(); sessionStop(true, 'quit'); });
 // SIGTERM/SIGINT (kill, Ctrl+C in the terminal) must still run will-quit: otherwise ffmpeg and vdisplay outlive the host
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => app.quit());
 
@@ -598,6 +644,8 @@ ipcMain.handle('get-info', async () => {
   return { ips, port: HTTP_PORT, urls, qr, platform: process.platform, settings, autostart: settings.autostart };
 });
 ipcMain.handle('save-settings', (e, patch) => { saveSettings(patch); return settings; });
+ipcMain.handle('session-start', async () => { await sessionStart(); return true; });
+ipcMain.handle('session-stop', async () => { await sessionStop(false, 'panel'); return true; });
 ipcMain.handle('set-loopback', (e, v) => { wantLoopback = !!v; return true; });
 ipcMain.handle('tcp-connect', (e, host, port) => { tcpConnect(host, port); return true; });
 ipcMain.handle('tcp-disconnect', () => { tcpDisconnect(); return true; });

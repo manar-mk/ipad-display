@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('host', {
   usbList: () => ipcRenderer.invoke('usb-list'),
   installVdd: () => ipcRenderer.invoke('install-vdd'),
   setupAudio: () => ipcRenderer.invoke('setup-audio'),
+  sessionStart: () => ipcRenderer.invoke('session-start'),
+  sessionStop: () => ipcRenderer.invoke('session-stop'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   sendFrame: (arrayBuffer) => ipcRenderer.send('frame', arrayBuffer),
   sendAudioFormat: (rate, channels) => ipcRenderer.send('audio-format', rate, channels),
@@ -22,5 +24,6 @@ contextBridge.exposeInMainWorld('host', {
   videoStats: () => ipcRenderer.invoke('video-stats'),
   onNeedKey: (cb) => ipcRenderer.on('need-key', (e, why) => cb(why)),
   onStatus: (cb) => ipcRenderer.on('status', (e, s) => cb(s)),
+  onSessionHint: (cb) => ipcRenderer.on('session-hint', (e, t) => cb(t)),
   onServerError: (cb) => ipcRenderer.on('server-error', (e, m) => cb(m)),
 });

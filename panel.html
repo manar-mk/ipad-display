@@ -15,7 +15,7 @@
   .src img { width: 160px; height: 100px; object-fit: cover; border-radius: 5px; display: block; background: #000; }
   .src.sel { outline-color: #2f6fed; }
   .row { display: flex; gap: 10px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
-  .row[hidden], .warn[hidden], button[hidden] { display: none; }
+  .row[hidden], .warn[hidden], button[hidden], label[hidden] { display: none; }
   label { display: inline-flex; align-items: center; gap: 6px; }
   input[type=number], input[type=text], select { border: 1px solid #ccc; border-radius: 6px; padding: 4px 6px; font: inherit; }
   input[type=text] { width: 130px; } input[type=number] { width: 70px; }
@@ -81,6 +81,9 @@
     <button class="secondary" id="audiobtn" hidden>Создать устройство «iPad Display + динамики»</button>
     <span class="stat" id="audiostat"></span>
     <label><input type="checkbox" id="touch"> касания с iPad как мышь</label>
+    <label id="mdlbl"><input type="checkbox" id="manageDisplay"> включать монитор только на время работы</label>
+    <label id="malbl"><input type="checkbox" id="manageAudio"> убирать звуковое устройство iPad при остановке</label>
+    <label id="adlbl"><input type="checkbox" id="audioDefault"> делать его устройством по умолчанию</label>
     <span class="warn" id="axhint" hidden></span>
   </div>
   <div class="row">
@@ -135,12 +138,14 @@ let audioCtx = null, audioNode = null, audioTrack = null, audioLabel = '', aChun
 function applySettingsToUI() {
   $('#size').value = settings.size; $('#fps').value = settings.fps; $('#q').value = settings.quality; $('#qv').textContent = settings.quality;
   $('#codec').value = settings.codec || 'auto'; $('#bitrate').value = settings.bitrate || 6000;
-  for (const k of ['autostart', 'audio', 'touch', 'autoconnect']) $('#' + k).checked = !!settings[k];
+  for (const k of ['autostart', 'audio', 'touch', 'autoconnect', 'manageDisplay', 'manageAudio', 'audioDefault']) $('#' + k).checked = !!settings[k];
+  const win = settings.platform === 'win32';
+  $('#mdlbl').hidden = !win; $('#malbl').hidden = !win; $('#adlbl').hidden = !win;
 }
 function readSettingsFromUI() {
   return { size: $('#size').value, fps: Number($('#fps').value) || 15, quality: Number($('#q').value) || 60,
     codec: $('#codec').value, bitrate: Number($('#bitrate').value) || 6000,
-    autostart: $('#autostart').checked, audio: $('#audio').checked, audioSource: $('#asrc').value, touch: $('#touch').checked, autoconnect: $('#autoconnect').checked };
+    autostart: $('#autostart').checked, audio: $('#audio').checked, audioSource: $('#asrc').value, touch: $("#touch").checked, manageDisplay: $("#manageDisplay").checked, manageAudio: $("#manageAudio").checked, audioDefault: $("#audioDefault").checked, autoconnect: $('#autoconnect').checked };
 }
 async function persist() { settings = await host.saveSettings(readSettingsFromUI()); }
 
@@ -331,6 +336,10 @@ setInterval(async () => {
 
 // ---------- capture ----------
 async function start() {
+  // bring up the virtual monitor and move the sound to the cable before we pick a capture source
+  $('#stat').textContent = 'подготовка экрана и звука…';
+  await host.sessionStart();
+  await loadSources();
   try {
     if (selected) await host.selectSource(selected);
     const wantLoopback = $('#audio').checked && (await resolveAudioSource()) === 'loopback';
@@ -355,12 +364,14 @@ function schedule() {
   encTimer = setInterval(videoTick, period);  // H.264 (native app)
 }
 
-function stop() {
+function stop(keepSession) {
   running = false; clearInterval(timer); clearInterval(encTimer); stopAudio(); stopEncoder();
   if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
   $('#toggle').textContent = 'Старт'; $('#toggle').classList.remove('stop'); $('#stat').textContent = 'остановлено';
+  host.log('panel stop(keep=' + !!keepSession + ') from ' + ((new Error()).stack || '').split('\n').slice(1, 3).join(' <- ').replace(/\s+/g, ' '));
+  if (!keepSession) host.sessionStop(); // put the virtual monitor and the sound device back
 }
-async function restart() { stop(); await start(); }
+async function restart() { stop(true); await start(); }
 
 function tick() {
   if (!running || encoding || video.videoWidth === 0) return;
@@ -397,7 +408,7 @@ $('#fps').onchange = () => { persist(); if (running) schedule(); };
 $('#q').oninput = () => { $('#qv').textContent = $('#q').value; };
 $('#q').onchange = persist;
 $('#size').onchange = () => { prevSmall = null; persist(); };
-for (const k of ['autostart', 'touch', 'autoconnect']) $('#' + k).onchange = persist;
+for (const k of ['autostart', 'touch', 'autoconnect', 'manageDisplay', 'manageAudio', 'audioDefault']) $('#' + k).onchange = persist;
 $('#audio').onchange = async () => { await persist(); if (running) restart(); };
 $('#codec').onchange = async () => { await persist(); stopEncoder(); };
 $('#bitrate').onchange = async () => { await persist(); stopEncoder(); };
@@ -448,6 +459,7 @@ host.onStatus((s) => {
     $('#axhint').hidden = !ax; $('#axhint').textContent = ax;
   }
 });
+host.onSessionHint((t) => { const el = $('#audiostat'); el.textContent = t || ''; el.className = t ? 'warn' : 'stat'; });
 host.onServerError((m) => { $('#urls').innerHTML = '<span class="warn">Не удалось запустить сервер: ' + m + '</span>'; });
 
 (async () => {
