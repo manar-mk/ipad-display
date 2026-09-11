@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('host', {
   usbConnect: (port) => ipcRenderer.invoke('usb-connect', port),
   usbList: () => ipcRenderer.invoke('usb-list'),
   installVdd: () => ipcRenderer.invoke('install-vdd'),
+  setupAudio: () => ipcRenderer.invoke('setup-audio'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   sendFrame: (arrayBuffer) => ipcRenderer.send('frame', arrayBuffer),
   sendAudioFormat: (rate, channels) => ipcRenderer.send('audio-format', rate, channels),

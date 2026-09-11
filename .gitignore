@@ -4,3 +4,6 @@ tools/*.jpg
 .DS_Store
 tools/*.ipa
 out/
+driver/macos/vdisplay
+driver/macos/mousehelper
+driver/macos/audiosetup

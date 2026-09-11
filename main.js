@@ -10,7 +10,7 @@
 //   Device -> host: 0x01 ack, 'T' touch [phase][x16][y16].
 // WebSocket (web client): same typed binary messages; text 'a' = ack, text JSON {"t":"touch",...}.
 
-const { app, BrowserWindow, desktopCapturer, ipcMain, session, shell, screen } = require('electron');
+const { app, BrowserWindow, desktopCapturer, ipcMain, session, shell, screen, systemPreferences } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -91,10 +91,11 @@ function onPresented(pts) {
   latencyMs = latencyMs === null ? l : latencyMs * 0.9 + l * 0.1;
 }
 
-// ---------- external hardware encoder (ffmpeg ddagrab + h264_mf), Windows only ----------
+// ---------- external hardware encoder: ffmpeg ddagrab + h264_mf (Windows), avfoundation + h264_videotoolbox (macOS) ----------
 const ffenc = require('./ffenc');
-const ext = { path: null, outputs: null, enc: null, active: false, restartTimer: null, lastStart: 0 };
-ext.path = process.platform === 'win32' ? ffenc.findFfmpeg() : null;
+const MAC = process.platform === 'darwin';
+const ext = { path: null, outputs: null, enc: null, active: false, starting: false, restartTimer: null, lastStart: 0 };
+ext.path = (process.platform === 'win32' || MAC) ? ffenc.findFfmpeg() : null;
 function encoderMode() {
   const c = settings.codec;
   if (c === 'ffmpeg') return ext.path ? 'ffmpeg' : 'webcodecs';
@@ -102,34 +103,42 @@ function encoderMode() {
   return c; // 'h264' (WebCodecs) or 'jpeg'
 }
 async function externalOutputIdx() {
-  if (!ext.outputs) ext.outputs = await ffenc.probeOutputs(ext.path);
+  // one shared probe: two concurrent avfoundation screen captures hang each other (Wi-Fi connect followed by the USB switch)
+  if (!ext.outputs) ext.outputs = ffenc.probeOutputs(ext.path);
+  ext.outputs = await ext.outputs;
   const d = selectedDisplay || screen.getPrimaryDisplay();
   const pw = Math.round(d.bounds.width * d.scaleFactor), ph = Math.round(d.bounds.height * d.scaleFactor);
   const hit = ext.outputs.find((o) => o.width === pw && o.height === ph) || ext.outputs.find((o) => Math.abs(o.width / o.height - 4 / 3) < 0.02);
   return hit ? hit.idx : null;
 }
 async function startExternal() {
-  if (encoderMode() !== 'ffmpeg' || ext.active) return;
-  const idx = await externalOutputIdx();
-  if (idx === null) { console.error('[ffmpeg] no DXGI output matches the captured display; falling back to WebCodecs'); ext.path = null; return; }
+  if (encoderMode() !== 'ffmpeg' || ext.active || ext.starting) return;
+  ext.starting = true;
+  let idx;
+  try { idx = await externalOutputIdx(); } finally { ext.starting = false; }
+  if (ext.active || tcp.state !== 'connected') return; // disconnected (or restarted) while probing
+  if (idx === null) { console.error('[ffmpeg] no capture output matches the captured display; falling back to WebCodecs'); ext.path = null; return; }
   if (!ext.enc) ext.enc = new ffenc.FfmpegEncoder(ext.path);
   ext.active = true; ext.lastStart = Date.now();
   ext.enc.onConfig = (avcC) => onVideoConfig(avcC);
   ext.enc.onFrame = (avcc, key) => onVideoChunk(avcc, key, Date.now() >>> 0);
   ext.enc.onExit = (code) => { if (ext.active) { console.error('[ffmpeg] exited', code, '- restarting'); ext.active = false; setTimeout(startExternal, 1000); } };
-  ext.enc.start({ outputIdx: idx, fps: Math.min(60, Math.max(15, settings.fps || 60)), bitrateKbps: settings.bitrate || 8000, gop: 120 });
-  console.log('[ffmpeg] started on DXGI output', idx);
+  const max = /^(\d+)x(\d+)$/.exec(settings.size || ''); // macOS: fit a Retina/large screen into the configured size
+  ext.enc.start({ outputIdx: idx, fps: Math.min(60, Math.max(15, settings.fps || 60)), bitrateKbps: settings.bitrate || 8000, gop: 120,
+    maxSize: MAC && max && +max[1] > 0 ? [+max[1], +max[2]] : null });
+  console.log('[ffmpeg] started on capture output', idx);
 }
 function stopExternal() { ext.active = false; clearTimeout(ext.restartTimer); if (ext.enc) ext.enc.stop(); stopExternalAudio(); }
 
-// ffmpeg dshow capture of the virtual cable for the app (see onAudioChunk); the renderer path stays for Safari.
-const extAudio = { device: null, probed: false, cap: null, active: false };
+// ffmpeg capture (dshow / avfoundation) of the virtual cable for the app (see onAudioChunk); the renderer path stays for Safari.
+const CABLE_RE = /CABLE Output|VB-Audio|Virtual Cable|BlackHole|iPad/i; // VB-CABLE on Windows, BlackHole on macOS
+const extAudio = { device: null, probed: 0, cap: null, active: false };
 async function startExternalAudio() {
   if (!settings.audio || !ext.path || extAudio.active) return;
-  if (!extAudio.probed) {
-    extAudio.probed = true;
+  if (!extAudio.device && Date.now() - extAudio.probed > 30000) { // no cable yet: look again on later connects (it may get installed meanwhile)
+    extAudio.probed = Date.now();
     const names = await ffenc.listAudioDevices(ext.path);
-    extAudio.device = names.find((n) => /CABLE Output|VB-Audio|Virtual Cable|iPad/i.test(n)) || null;
+    extAudio.device = names.find((n) => CABLE_RE.test(n)) || null;
     console.log('[ffmpeg-audio] devices:', names.join(' | '), '-> using', extAudio.device);
   }
   if (!extAudio.device || tcp.state !== 'connected') return;
@@ -221,34 +230,68 @@ while ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { break }; $p =
       mouseHelper.on('error', () => { mouseHelper = null; });
     }
     if (mouseHelper) mouseHelper.stdin.write(line + '\n');
-  } else if (process.platform === 'darwin') {
-    // macOS: persistent python helper using Quartz (pyobjc ships with the system python on many Macs).
+  } else if (MAC) {
+    // macOS: driver/macos/mousehelper.swift (CGEvent), same command set; built with swiftc on first use.
     if (!mouseHelper) {
-      const py = `
-import sys, Quartz
-def ev(t, x, y, b=Quartz.kCGMouseButtonLeft):
-    e = Quartz.CGEventCreateMouseEvent(None, t, (x, y), b); Quartz.CGEventPost(Quartz.kCGHIDEventTap, e)
-for line in sys.stdin:
-    p = line.split()
-    if not p: continue
-    x, y = (float(p[1]), float(p[2])) if len(p) > 2 else (0.0, 0.0)
-    if p[0] == 'move': ev(Quartz.kCGEventMouseMoved, x, y)
-    elif p[0] == 'down': ev(Quartz.kCGEventLeftMouseDown, x, y)
-    elif p[0] == 'up': ev(Quartz.kCGEventLeftMouseUp, x, y)
-    elif p[0] == 'rclick': ev(Quartz.kCGEventRightMouseDown, x, y, Quartz.kCGMouseButtonRight); ev(Quartz.kCGEventRightMouseUp, x, y, Quartz.kCGMouseButtonRight)
-    elif p[0] in ('wheel', 'hwheel', 'zoom'):
-        n = int(float(p[1]) / 120)
-        e = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitLine, 2, n if p[0] != 'hwheel' else 0, n if p[0] == 'hwheel' else 0)
-        if p[0] == 'zoom': Quartz.CGEventSetFlags(e, Quartz.kCGEventFlagMaskCommand)
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap, e)
-`;
-      mouseHelper = spawn('python3', ['-c', py], { stdio: ['pipe', 'ignore', 'ignore'] });
+      const bin = macHelper('mousehelper');
+      if (!bin.path) { if (!mac.mouseError) { mac.mouseError = bin.error; notifyStatus(); } return; }
+      mouseHelper = spawn(bin.path, [], { stdio: ['pipe', 'pipe', 'ignore'] });
+      mouseHelper.stdout.on('data', (d) => { // "ax 0|1" once at start (accessibility permission of this app), "pos x y" on request
+        for (const l of d.toString().split('\n')) {
+          const m = /^ax (\d)/.exec(l);
+          if (m) { mac.axTrusted = m[1] === '1'; console.log('[mouse] accessibility trusted:', mac.axTrusted); notifyStatus(); }
+          else if (l.trim()) console.log('[mouse]', l.trim());
+        }
+      });
       mouseHelper.on('exit', () => { mouseHelper = null; });
       mouseHelper.on('error', () => { mouseHelper = null; });
     }
     if (mouseHelper) mouseHelper.stdin.write(line + '\n');
   }
 }
+
+// ---------- macOS helpers (driver/macos/*.swift, compiled with swiftc from Command Line Tools on first use) ----------
+// vdisplay: a virtual 1024x768 @ 60 Hz monitor "iPad Display" through the private CGVirtualDisplay API (as DeskPad does);
+// it lives while the helper process runs. mousehelper: CGEvent mouse/scroll injection (needs Accessibility permission).
+const mac = { vdisplay: null, vdisplayId: null, vdisplayError: null, axTrusted: null, mouseError: null };
+const MAC_DIR = path.join(__dirname, 'driver', 'macos');
+function macHelper(name) {
+  const bin = path.join(MAC_DIR, name), src = bin + '.swift';
+  if (fs.existsSync(bin) && fs.statSync(bin).mtimeMs >= fs.statSync(src).mtimeMs) return { path: bin };
+  const extra = { vdisplay: ['-import-objc-header', path.join(MAC_DIR, 'CGVirtualDisplay.h'), '-framework', 'CoreGraphics'], mousehelper: ['-framework', 'ApplicationServices'], audiosetup: ['-framework', 'CoreAudio'] };
+  const args = ['-O', src, '-o', bin, ...(extra[name] || [])];
+  console.log('[mac] building', name, 'with swiftc');
+  const r = require('child_process').spawnSync('xcrun', ['swiftc', ...args], { encoding: 'utf8', timeout: 180000 });
+  if (r.status === 0 && fs.existsSync(bin)) return { path: bin };
+  const why = (r.error && r.error.message) || (r.stderr || '').trim().split('\n').slice(-3).join(' ') || ('код ' + r.status);
+  return { path: null, error: 'Не удалось собрать ' + name + ' (swiftc): ' + why + '. Нужны Command Line Tools: xcode-select --install' };
+}
+// Resolves with { id } once the display exists (or { error }); the helper is reused while it runs.
+function startVdisplay() {
+  if (!MAC) return Promise.resolve({ error: 'только для macOS' });
+  if (mac.vdisplay && mac.vdisplayId !== null) return Promise.resolve({ id: mac.vdisplayId });
+  const bin = macHelper('vdisplay');
+  if (!bin.path) { mac.vdisplayError = bin.error; return Promise.resolve({ error: bin.error }); }
+  return new Promise((resolve) => {
+    const [w, h] = (/^(\d+)x(\d+)$/.exec(settings.size || '') || [0, 1024, 768]).slice(1).map(Number);
+    const p = spawn(bin.path, [String(w || 1024), String(h || 768), '60'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    mac.vdisplay = p; mac.vdisplayId = null; mac.vdisplayError = null;
+    let err = '', done = false;
+    const finish = (r) => { if (!done) { done = true; resolve(r); } };
+    p.stdout.on('data', (d) => { const m = /^display (\d+)/m.exec(d.toString()); if (m) { mac.vdisplayId = +m[1]; console.log('[vdisplay]', d.toString().trim()); finish({ id: mac.vdisplayId }); } });
+    p.stderr.on('data', (d) => { err += d.toString(); });
+    p.on('error', (e) => { err += e.message; });
+    p.on('exit', (code) => {
+      if (mac.vdisplay === p) { mac.vdisplay = null; mac.vdisplayId = null; }
+      const msg = 'vdisplay завершился (код ' + code + '): ' + err.trim() + ' — CGVirtualDisplay не работает на этой macOS? Запасной путь: brew install --cask deskpad, в DeskPad задайте 1024×768';
+      if (!done) mac.vdisplayError = msg; else if (code !== 0) console.error('[vdisplay]', msg);
+      finish({ error: msg });
+    });
+    setTimeout(() => finish({ error: 'vdisplay не ответил за 8 с' }), 8000);
+  });
+}
+function stopVdisplay() { if (mac.vdisplay) { const p = mac.vdisplay; mac.vdisplay = null; mac.vdisplayId = null; try { p.stdin.end('quit\n'); p.kill(); } catch (e) { /* gone */ } } }
+const hasVirtualDisplay = () => { const primary = screen.getPrimaryDisplay().id; return screen.getAllDisplays().some((d) => d.id !== primary && Math.abs(d.bounds.width / d.bounds.height - 4 / 3) < 0.02); };
 
 function onTouch(phase, nx, ny) {
   const d = selectedDisplay || screen.getPrimaryDisplay();
@@ -459,6 +502,7 @@ function notifyStatus() {
     ws: [...wsClients.values()].map((s) => s.ip),
     tcp: { state: tcp.state, mode: tcp.mode, host: tcp.host, port: tcp.port, error: tcp.error },
     discovered: [...discovered.keys()],
+    mac: MAC ? { axTrusted: mac.axTrusted, mouseError: mac.mouseError, vdisplay: mac.vdisplayId, vdisplayError: mac.vdisplayError, screenAccess: systemPreferences.getMediaAccessStatus('screen') } : null,
   });
 }
 
@@ -489,9 +533,13 @@ function createWindow() {
   win.on('closed', () => { win = null; });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   loadSettings();
   if (process.env.IPAD_DISPLAY_AUTOSTART) settings.autostart = true;
+  // macOS: bring up the virtual monitor before the panel enumerates screens (unless one exists already, e.g. DeskPad)
+  if (MAC && !hasVirtualDisplay()) { const r = await startVdisplay(); if (r.error) console.error('[vdisplay]', r.error); else await new Promise((res) => setTimeout(res, 500)); }
+  screen.on('display-added', () => { ext.outputs = null; });
+  screen.on('display-removed', () => { ext.outputs = null; });
   session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
     const src = await pickSource();
     if (!src) return callback({});
@@ -509,7 +557,9 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => { app.quit(); });
-app.on('will-quit', () => { if (mouseHelper) mouseHelper.kill(); stopExternal(); });
+app.on('will-quit', () => { if (mouseHelper) mouseHelper.kill(); stopExternal(); stopVdisplay(); });
+// SIGTERM/SIGINT (kill, Ctrl+C in the terminal) must still run will-quit: otherwise ffmpeg and vdisplay outlive the host
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => app.quit());
 
 // ---------- IPC ----------
 ipcMain.handle('get-sources', async () => {
@@ -542,13 +592,23 @@ ipcMain.handle('usb-connect', (e, port) => { usbConnect(port); return true; });
 ipcMain.handle('usb-list', async () => { try { return { devices: await usbmux.listDevices() }; } catch (e) { return { error: e.message }; } });
 ipcMain.handle('open-external', (e, url) => shell.openExternal(url));
 ipcMain.handle('install-vdd', () => new Promise((resolve) => {
-  if (process.platform !== 'win32') return resolve({ error: 'Только для Windows. На macOS используйте DeskPad или BetterDisplay.' });
+  if (MAC) return startVdisplay().then((r) => resolve(r.error ? { error: r.error, code: 1 } : { code: 0, out: 'виртуальный монитор «iPad Display» создан, id ' + r.id }));
+  if (process.platform !== 'win32') return resolve({ error: 'Только для Windows и macOS.' });
   const script = path.join(__dirname, 'driver', 'windows', 'install-vdd.ps1');
   const log = path.join(app.getPath('userData'), 'vdd-install.log');
   const inner = `& '${script}' *> '${log}'`;
   const ps = spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process powershell -Verb RunAs -Wait -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-Command',${JSON.stringify(inner)})`], { windowsHide: true });
   ps.on('exit', (code) => { let out = ''; try { out = fs.readFileSync(log, 'utf8'); } catch (e) { /* no log */ } resolve({ code, out }); });
 }));
+// macOS: Multi-Output Device "iPad Display + динамики" (BlackHole + built-in speakers), see driver/macos/audiosetup.swift
+ipcMain.handle('setup-audio', () => {
+  if (!MAC) return { error: 'Только для macOS' };
+  const bin = macHelper('audiosetup');
+  if (!bin.path) return { error: bin.error };
+  const r = require('child_process').spawnSync(bin.path, [], { encoding: 'utf8', timeout: 20000 });
+  extAudio.probed = 0; // let the next connect find the cable
+  return { code: r.status, out: ((r.stdout || '') + (r.stderr || '')).trim() };
+});
 ipcMain.on('log', (e, msg) => console.log('[panel]', msg));
 ipcMain.on('frame', (e, ab) => onNewFrame(Buffer.from(ab)));
 ipcMain.on('audio-format', (e, rate, channels) => onAudioFormat(rate, channels));
