@@ -63,8 +63,9 @@
   <div class="row">
     <label>Кодек для приложения
       <select id="codec">
-        <option value="auto">авто (H.264, если доступен)</option>
-        <option value="h264">H.264 (аппаратный декодер iPad)</option>
+        <option value="auto">авто (ffmpeg аппаратно → H.264 WebCodecs → JPEG)</option>
+        <option value="ffmpeg">H.264 аппаратно (ffmpeg + Media Foundation)</option>
+        <option value="h264">H.264 программно (WebCodecs)</option>
         <option value="jpeg">JPEG</option>
       </select>
     </label>
@@ -280,8 +281,9 @@ function startEncoder(w, h) {
 function stopEncoder() { if (enc) { try { enc.close(); } catch (e) {} enc = null; } encW = encH = 0; }
 
 // One loop at the target fps: draws the capture into the work canvas and feeds the encoder.
+let extEnc = false, extLatency = null; // main process runs ffmpeg (hardware) for the app: no WebCodecs, no JPEG for it
 function videoTick() {
-  if (!running || !appConnected || !useH264() || video.videoWidth === 0) return;
+  if (!running || !appConnected || extEnc || !useH264() || video.videoWidth === 0) return;
   const [w, h] = targetSize(video.videoWidth, video.videoHeight);
   const ew = w & ~1, eh = h & ~1; // even dimensions for H.264
   if (!enc || encW !== ew || encH !== eh) {
@@ -301,9 +303,14 @@ setInterval(async () => {
   if (!running) { $('#vstat').textContent = ''; return; }
   const s = await host.videoStats();
   const dt = (Date.now() - vT) / 1000; vT = Date.now();
-  const line = enc ? ('H.264 ' + encW + '×' + encH + ' · ' + (vFrames / dt).toFixed(0) + ' fps · ' + (vBytes * 8 / dt / 1e6).toFixed(1) + ' Мбит/с' + (s.dropped ? ' · пропущено ' + s.dropped : '') + ' · ' + encCfgName) : (useH264() ? 'H.264: ждёт подключения приложения' : 'JPEG');
+  extEnc = !!s.external; extLatency = s.latency;
+  if (extEnc && enc) stopEncoder();
+  const lat = s.latency !== null && s.latency !== undefined ? ' · задержка сеть+декодер ' + s.latency + ' мс' : '';
+  const line = extEnc ? ('H.264 аппаратно (ffmpeg/MF) · ' + s.fps.toFixed(0) + ' fps · ' + (s.kbps / 1000).toFixed(1) + ' Мбит/с' + (s.dropped ? ' · пропущено ' + s.dropped : '') + lat)
+    : enc ? ('H.264 ' + encW + '×' + encH + ' · ' + (vFrames / dt).toFixed(0) + ' fps · ' + (vBytes * 8 / dt / 1e6).toFixed(1) + ' Мбит/с' + (s.dropped ? ' · пропущено ' + s.dropped : '') + ' · ' + encCfgName + lat)
+    : (s.encoder === 'ffmpeg' ? 'H.264 аппаратно: ждёт подключения приложения' : useH264() ? 'H.264: ждёт подключения приложения' : 'JPEG');
   $('#vstat').textContent = line;
-  if (enc && (Date.now() / 1000 | 0) % 5 === 0) host.log('video: ' + line);
+  if ((enc || extEnc) && (Date.now() / 1000 | 0) % 5 === 0) host.log('video: ' + line);
   vFrames = 0; vBytes = 0;
 }, 1000);
 
@@ -342,7 +349,7 @@ async function restart() { stop(); await start(); }
 
 function tick() {
   if (!running || encoding || video.videoWidth === 0) return;
-  if (appConnected && useH264() && wsCount === 0) return; // the app gets H.264; nobody needs JPEG right now
+  if (appConnected && (useH264() || extEnc) && wsCount === 0) return; // the app gets H.264; nobody needs JPEG right now
   const [w, h] = targetSize(video.videoWidth, video.videoHeight);
   if (work.width !== w || work.height !== h) { work.width = w; work.height = h; prevSmall = null; }
   wctx.drawImage(video, 0, 0, w, h);

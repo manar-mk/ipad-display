@@ -66,6 +66,7 @@ function sendWs(ws, st) {
 
 function sendTcp() {
   const s = tcp.socket;
+  if (ext.active) return; // the app is on the ffmpeg H.264 stream; JPEG would switch it back
   if (!s || tcp.state !== 'connected' || tcp.inflight || !latestFrame || tcp.sentSeq === latestSeq) return;
   tcp.inflight = true;
   tcp.sentSeq = latestSeq;
@@ -79,7 +80,58 @@ let videoConfig = null;   // Buffer (avcC), re-sent on every new connection
 let needKey = true;       // next frame we forward must be a keyframe (new connection / backlog / device request)
 const VIDEO_BACKLOG = 600 * 1024;
 const videoStats = { frames: 0, bytes: 0, dropped: 0, t: Date.now() };
-function requestKeyframe(why) { needKey = true; if (win && !win.isDestroyed()) win.webContents.send('need-key', why); }
+// Latency probe: the iPad echoes the pts of every frame it hands to the decoder ('P'); we remember when we
+// sent each pts and keep an EMA of (now - sent). This covers network + decode queue, not capture/encode.
+const ptsSent = new Map();
+let latencyMs = null;
+function onPresented(pts) {
+  const t = ptsSent.get(pts);
+  if (t === undefined) return;
+  const l = Date.now() - t;
+  latencyMs = latencyMs === null ? l : latencyMs * 0.9 + l * 0.1;
+}
+
+// ---------- external hardware encoder (ffmpeg ddagrab + h264_mf), Windows only ----------
+const ffenc = require('./ffenc');
+const ext = { path: null, outputs: null, enc: null, active: false, restartTimer: null, lastStart: 0 };
+ext.path = process.platform === 'win32' ? ffenc.findFfmpeg() : null;
+function encoderMode() {
+  const c = settings.codec;
+  if (c === 'ffmpeg') return ext.path ? 'ffmpeg' : 'webcodecs';
+  if (c === 'auto') return ext.path ? 'ffmpeg' : 'webcodecs';
+  return c; // 'h264' (WebCodecs) or 'jpeg'
+}
+async function externalOutputIdx() {
+  if (!ext.outputs) ext.outputs = await ffenc.probeOutputs(ext.path);
+  const d = selectedDisplay || screen.getPrimaryDisplay();
+  const pw = Math.round(d.bounds.width * d.scaleFactor), ph = Math.round(d.bounds.height * d.scaleFactor);
+  const hit = ext.outputs.find((o) => o.width === pw && o.height === ph) || ext.outputs.find((o) => Math.abs(o.width / o.height - 4 / 3) < 0.02);
+  return hit ? hit.idx : null;
+}
+async function startExternal() {
+  if (encoderMode() !== 'ffmpeg' || ext.active) return;
+  const idx = await externalOutputIdx();
+  if (idx === null) { console.error('[ffmpeg] no DXGI output matches the captured display; falling back to WebCodecs'); ext.path = null; return; }
+  if (!ext.enc) ext.enc = new ffenc.FfmpegEncoder(ext.path);
+  ext.active = true; ext.lastStart = Date.now();
+  ext.enc.onConfig = (avcC) => onVideoConfig(avcC);
+  ext.enc.onFrame = (avcc, key) => onVideoChunk(avcc, key, Date.now() >>> 0);
+  ext.enc.onExit = (code) => { if (ext.active) { console.error('[ffmpeg] exited', code, '- restarting'); ext.active = false; setTimeout(startExternal, 1000); } };
+  ext.enc.start({ outputIdx: idx, fps: Math.min(60, Math.max(15, settings.fps || 60)), bitrateKbps: settings.bitrate || 8000, gop: 120 });
+  console.log('[ffmpeg] started on DXGI output', idx);
+}
+function stopExternal() { ext.active = false; clearTimeout(ext.restartTimer); if (ext.enc) ext.enc.stop(); }
+
+function requestKeyframe(why) {
+  needKey = true;
+  if (ext.active) { // ffmpeg cannot be asked for an IDR mid-stream: restart it (produces an immediate keyframe)
+    if (Date.now() - ext.lastStart < 1500) return; // one just started, its first frame is a keyframe anyway
+    clearTimeout(ext.restartTimer);
+    ext.restartTimer = setTimeout(() => { if (ext.active) { ext.active = false; ext.enc.stop(); startExternal(); } }, 100);
+    return;
+  }
+  if (win && !win.isDestroyed()) win.webContents.send('need-key', why);
+}
 function onVideoConfig(buf) {
   videoConfig = buf;
   if (tcp.socket && tcp.state === 'connected') { tcp.socket.write(frameMsg('H', buf)); needKey = true; }
@@ -94,8 +146,10 @@ function onVideoChunk(buf, key, ptsMs) {
     return;
   }
   needKey = false;
-  const h = Buffer.alloc(5); h[0] = key ? 1 : 0; h.writeUInt32BE(ptsMs >>> 0, 1);
+  const pts = ptsMs >>> 0;
+  const h = Buffer.alloc(5); h[0] = key ? 1 : 0; h.writeUInt32BE(pts, 1);
   s.write(frameMsg('V', Buffer.concat([h, buf])));
+  ptsSent.set(pts, Date.now()); if (ptsSent.size > 240) ptsSent.delete(ptsSent.keys().next().value);
   videoStats.frames++; videoStats.bytes += buf.length;
 }
 
@@ -216,6 +270,7 @@ function onDeviceData(d) {
     if (t === 0x5a /* Z */) { if (tcp.rx.length < 3) return; onZoom(tcp.rx.readInt16BE(1)); tcp.rx = tcp.rx.subarray(3); continue; }
     if (t === 0x52 /* R */) { if (tcp.rx.length < 5) return; onRightClick(tcp.rx.readUInt16BE(1) / 65535, tcp.rx.readUInt16BE(3) / 65535); tcp.rx = tcp.rx.subarray(5); continue; }
     if (t === 0x4b /* K */) { tcp.rx = tcp.rx.subarray(1); requestKeyframe('device'); continue; }
+    if (t === 0x50 /* P */) { if (tcp.rx.length < 5) return; onPresented(tcp.rx.readUInt32BE(1)); tcp.rx = tcp.rx.subarray(5); continue; }
     tcp.rx = tcp.rx.subarray(1); // unknown byte: skip
   }
 }
@@ -251,12 +306,14 @@ async function tcpTry() {
   tcp.state = 'connected'; tcp.inflight = false; tcp.sentSeq = 0;
   notifyStatus();
   if (audioFormat) s.write(audioFormatMsg());
-  if (videoConfig) { s.write(frameMsg('H', videoConfig)); requestKeyframe('connect'); }
+  if (encoderMode() === 'ffmpeg') { videoConfig = null; latencyMs = null; startExternal(); }
+  else if (videoConfig) { s.write(frameMsg('H', videoConfig)); requestKeyframe('connect'); }
   sendTcp();
   s.on('data', onDeviceData);
   const drop = () => {
     if (tcp.socket !== s) return;
     tcp.socket = null;
+    stopExternal();
     tcp.state = tcp.want ? 'retrying' : 'off';
     notifyStatus();
     if (tcp.want) tcp.timer = setTimeout(tcpTry, 1500);
@@ -268,6 +325,7 @@ async function tcpTry() {
 function tcpDisconnect() {
   tcp.want = false;
   clearTimeout(tcp.timer);
+  stopExternal();
   if (tcp.socket) { tcp.socket.destroy(); tcp.socket = null; }
   tcp.state = 'off';
   notifyStatus();
@@ -291,15 +349,21 @@ function startDiscovery() {
   sock.on('error', (e) => console.error('discovery:', e.message));
   sock.bind(BEACON_PORT);
 
-  // USB fallback: nothing connected and a device sits on the cable -> try usbmuxd.
+  // USB has priority: a cable means the user wants the lower-jitter path. If a device is on USB and we are
+  // not connected through it, (re)connect over usbmuxd; otherwise USB stays the fallback when Wi-Fi is silent.
+  let usbFailedAt = 0;
   setInterval(async () => {
     for (const [ip, d] of discovered) if (Date.now() - d.seen > 10000) discovered.delete(ip);
-    if (!settings.autoconnect || tcp.state === 'connected' || tcp.state === 'connecting') return;
-    if (tcp.want && Date.now() - (tcp.since || 0) < 15000) return; // give the current attempt a chance
-    try {
-      const devs = await usbmux.listDevices();
-      if (devs.length && !(tcp.mode === 'usb' && tcp.want)) { console.log('auto-connect USB'); usbConnect(APP_PORT); tcp.since = Date.now(); }
-    } catch (e) { /* no usbmuxd on this machine */ }
+    if (!settings.autoconnect) return;
+    let devs = [];
+    try { devs = await usbmux.listDevices(); } catch (e) { return; /* no usbmuxd on this machine */ }
+    if (!devs.length) return;
+    if (tcp.mode === 'usb' && (tcp.state === 'connected' || tcp.state === 'connecting')) return;
+    if (tcp.mode === 'usb' && tcp.want && Date.now() - (tcp.since || 0) < 15000) return; // give the current USB attempt a chance
+    if (Date.now() - usbFailedAt < 30000) return; // the app was not listening over USB a moment ago; retry later
+    console.log('auto-connect USB' + (tcp.state === 'connected' ? ' (switching from Wi-Fi)' : ''));
+    usbConnect(APP_PORT); tcp.since = Date.now();
+    setTimeout(() => { if (tcp.mode === 'usb' && tcp.state !== 'connected') { usbFailedAt = Date.now(); tcpDisconnect(); } }, 6000);
   }, 5000);
 }
 
@@ -416,7 +480,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => { app.quit(); });
-app.on('will-quit', () => { if (mouseHelper) mouseHelper.kill(); });
+app.on('will-quit', () => { if (mouseHelper) mouseHelper.kill(); stopExternal(); });
 
 // ---------- IPC ----------
 ipcMain.handle('get-sources', async () => {
@@ -462,4 +526,4 @@ ipcMain.on('audio-format', (e, rate, channels) => onAudioFormat(rate, channels))
 ipcMain.on('audio', (e, ab) => onAudioChunk(Buffer.from(ab)));
 ipcMain.on('video-config', (e, ab) => onVideoConfig(Buffer.from(ab)));
 ipcMain.on('video-chunk', (e, ab, key, ptsMs) => onVideoChunk(Buffer.from(ab), !!key, ptsMs | 0));
-ipcMain.handle('video-stats', () => { const dt = (Date.now() - videoStats.t) / 1000 || 1; const r = { fps: videoStats.frames / dt, kbps: videoStats.bytes * 8 / dt / 1000, dropped: videoStats.dropped, connected: tcp.state === 'connected' }; videoStats.frames = 0; videoStats.bytes = 0; videoStats.dropped = 0; videoStats.t = Date.now(); return r; });
+ipcMain.handle('video-stats', () => { const dt = (Date.now() - videoStats.t) / 1000 || 1; const r = { fps: videoStats.frames / dt, kbps: videoStats.bytes * 8 / dt / 1000, dropped: videoStats.dropped, connected: tcp.state === 'connected', external: ext.active, encoder: encoderMode(), latency: latencyMs === null ? null : Math.round(latencyMs) }; videoStats.frames = 0; videoStats.bytes = 0; videoStats.dropped = 0; videoStats.t = Date.now(); return r; });
