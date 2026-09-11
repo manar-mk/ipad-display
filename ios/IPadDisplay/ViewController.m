@@ -316,6 +316,21 @@ static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); 
 
 #pragma mark - audio playback (AudioQueue, PCM s16le)
 
+// Debug trail for the audio path, readable over SSH: /tmp/ipaddisplay.log
+static void dbg(NSString *fmt, ...) {
+    va_list a; va_start(a, fmt);
+    NSString *s = [[NSString alloc] initWithFormat:fmt arguments:a];
+    va_end(a);
+    NSString *line = [NSString stringWithFormat:@"%@ %@\n", [NSDate date], s];
+    NSString *path = @"/tmp/ipaddisplay.log";
+    NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:path];
+    if (!h) { [[NSFileManager defaultManager] createFileAtPath:path contents:nil attributes:nil]; h = [NSFileHandle fileHandleForWritingAtPath:path]; }
+    if (!h) return;
+    [h seekToEndOfFile];
+    [h writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+    [h closeFile];
+}
+
 static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRef buf) {
     ViewController *vc = (__bridge ViewController *)userData;
     [vc audioBufferFree:buf];
@@ -323,9 +338,15 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
 
 - (void)frameServerDidReceiveAudioFormat:(uint32_t)sampleRate channels:(uint8_t)channels {
     dispatch_async(dispatch_get_main_queue(), ^{
+        dbg(@"audio format %u Hz %u ch (queue=%p)", (unsigned)sampleRate, (unsigned)channels, _queue);
         if (_queue && _rate == sampleRate && _channels == channels) return;
         [self stopAudio];
         _rate = sampleRate; _channels = channels ? channels : 1;
+        AVAudioSession *sess = [AVAudioSession sharedInstance];
+        NSError *se = nil;
+        BOOL okCat = [sess setCategory:AVAudioSessionCategoryPlayback error:&se];
+        BOOL okAct = [sess setActive:YES error:&se];
+        dbg(@"session category=%d active=%d err=%@ volume=%.2f route=%@", okCat, okAct, se.localizedDescription, sess.outputVolume, sess.currentRoute.outputs.firstObject.portType);
         AudioStreamBasicDescription f;
         memset(&f, 0, sizeof(f));
         f.mSampleRate = sampleRate;
@@ -336,18 +357,25 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
         f.mBytesPerFrame = 2 * _channels;
         f.mFramesPerPacket = 1;
         f.mBytesPerPacket = f.mBytesPerFrame;
-        if (AudioQueueNewOutput(&f, AQOutputCallback, (__bridge void *)self, NULL, NULL, 0, &_queue) != noErr) { _queue = NULL; return; }
+        OSStatus ns = AudioQueueNewOutput(&f, AQOutputCallback, (__bridge void *)self, NULL, NULL, 0, &_queue);
+        if (ns != noErr) { dbg(@"AudioQueueNewOutput failed %d", (int)ns); _queue = NULL; return; }
         UInt32 bufBytes = (UInt32)(sampleRate / 10 * f.mBytesPerFrame); // 100 ms per buffer
         for (int i = 0; i < kAudioBuffers; i++) {
-            if (AudioQueueAllocateBuffer(_queue, bufBytes, &_buffers[i]) == noErr)
-                [_freeBuffers addObject:[NSValue valueWithPointer:_buffers[i]]];
+            OSStatus as = AudioQueueAllocateBuffer(_queue, bufBytes, &_buffers[i]);
+            if (as == noErr) [_freeBuffers addObject:[NSValue valueWithPointer:_buffers[i]]];
+            else dbg(@"AudioQueueAllocateBuffer %d failed %d", i, (int)as);
         }
+        AudioQueueSetParameter(_queue, kAudioQueueParam_Volume, 1.0);
         _audioStarted = NO;
+        dbg(@"queue ready, %lu buffers of %u bytes", (unsigned long)_freeBuffers.count, (unsigned)bufBytes);
     });
 }
 
 - (void)frameServerDidReceiveAudio:(NSData *)pcm {
     dispatch_async(dispatch_get_main_queue(), ^{
+        static unsigned chunks = 0;
+        chunks++;
+        if (chunks == 1 || chunks % 200 == 0) dbg(@"audio chunk #%u (%lu bytes) queue=%p pending=%lu free=%lu started=%d", chunks, (unsigned long)pcm.length, _queue, (unsigned long)_pending.length, (unsigned long)_freeBuffers.count, _audioStarted);
         if (!_queue) return;
         [_pending appendData:pcm];
         [self pumpAudio];
@@ -374,8 +402,9 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
         buf->mAudioDataByteSize = (UInt32)n;
         [_pending replaceBytesInRange:NSMakeRange(0, n) withBytes:NULL length:0];
         [_freeBuffers removeLastObject];
-        if (AudioQueueEnqueueBuffer(_queue, buf, 0, NULL) != noErr) { [_freeBuffers addObject:[NSValue valueWithPointer:buf]]; break; }
-        if (!_audioStarted && _freeBuffers.count <= kAudioBuffers - 3) { AudioQueueStart(_queue, NULL); _audioStarted = YES; }
+        OSStatus es = AudioQueueEnqueueBuffer(_queue, buf, 0, NULL);
+        if (es != noErr) { dbg(@"AudioQueueEnqueueBuffer failed %d", (int)es); [_freeBuffers addObject:[NSValue valueWithPointer:buf]]; break; }
+        if (!_audioStarted && _freeBuffers.count <= kAudioBuffers - 3) { OSStatus ss = AudioQueueStart(_queue, NULL); _audioStarted = YES; dbg(@"AudioQueueStart -> %d", (int)ss); }
     }
 }
 

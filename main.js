@@ -160,10 +160,12 @@ function onAudioFormat(rate, channels) {
   for (const [ws] of wsClients) if (ws.readyState === ws.OPEN) ws.send(m, { binary: true });
 }
 
+const audioStats = { sent: 0, dropped: 0 };
 function onAudioChunk(buf) {
   if (!settings.audio) return;
   const m = frameMsg('A', buf);
-  if (tcp.socket && tcp.state === 'connected' && tcp.socket.writableLength < 256 * 1024) tcp.socket.write(m);
+  // audio is small (4 KB per chunk): send it ahead of video unless the socket is badly backed up
+  if (tcp.socket && tcp.state === 'connected') { if (tcp.socket.writableLength < 2 * 1024 * 1024) { tcp.socket.write(m); audioStats.sent++; } else audioStats.dropped++; }
   for (const [ws] of wsClients) if (ws.readyState === ws.OPEN && ws.bufferedAmount < 256 * 1024) ws.send(m, { binary: true });
 }
 
@@ -526,4 +528,4 @@ ipcMain.on('audio-format', (e, rate, channels) => onAudioFormat(rate, channels))
 ipcMain.on('audio', (e, ab) => onAudioChunk(Buffer.from(ab)));
 ipcMain.on('video-config', (e, ab) => onVideoConfig(Buffer.from(ab)));
 ipcMain.on('video-chunk', (e, ab, key, ptsMs) => onVideoChunk(Buffer.from(ab), !!key, ptsMs | 0));
-ipcMain.handle('video-stats', () => { const dt = (Date.now() - videoStats.t) / 1000 || 1; const r = { fps: videoStats.frames / dt, kbps: videoStats.bytes * 8 / dt / 1000, dropped: videoStats.dropped, connected: tcp.state === 'connected', external: ext.active, encoder: encoderMode(), latency: latencyMs === null ? null : Math.round(latencyMs) }; videoStats.frames = 0; videoStats.bytes = 0; videoStats.dropped = 0; videoStats.t = Date.now(); return r; });
+ipcMain.handle('video-stats', () => { const dt = (Date.now() - videoStats.t) / 1000 || 1; const r = { fps: videoStats.frames / dt, kbps: videoStats.bytes * 8 / dt / 1000, dropped: videoStats.dropped, connected: tcp.state === 'connected', external: ext.active, encoder: encoderMode(), latency: latencyMs === null ? null : Math.round(latencyMs), audioSent: audioStats.sent, audioDropped: audioStats.dropped }; audioStats.sent = 0; audioStats.dropped = 0; videoStats.frames = 0; videoStats.bytes = 0; videoStats.dropped = 0; videoStats.t = Date.now(); return r; });
