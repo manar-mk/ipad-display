@@ -124,7 +124,7 @@ const work = document.createElement('canvas'), wctx = work.getContext('2d', { al
 const small = document.createElement('canvas'); small.width = 48; small.height = 36; const sctx = small.getContext('2d', { alpha: false, willReadFrequently: true });
 const preview = $('#preview'), pctx = preview.getContext('2d', { alpha: false });
 let prevSmall = null, lastForced = 0, frames = 0, bytes = 0, statT = Date.now(), encoding = false;
-let audioCtx = null, audioNode = null, audioTrack = null, audioLabel = '';
+let audioCtx = null, audioNode = null, audioTrack = null, audioLabel = '', aChunks = 0;
 
 // ---------- settings <-> UI ----------
 function applySettingsToUI() {
@@ -215,6 +215,7 @@ async function startAudio(s) {
   audioNode = audioCtx.createScriptProcessor(2048, 1, 1);
   host.sendAudioFormat(RATE, 1);
   audioNode.onaudioprocess = (ev) => {
+    aChunks++;
     if (!running || !$('#audio').checked) return;
     const f = ev.inputBuffer.getChannelData(0);
     const out = new Int16Array(f.length);
@@ -311,6 +312,7 @@ setInterval(async () => {
     : (s.encoder === 'ffmpeg' ? 'H.264 аппаратно: ждёт подключения приложения' : useH264() ? 'H.264: ждёт подключения приложения' : 'JPEG');
   $('#vstat').textContent = line;
   if ((enc || extEnc) && (Date.now() / 1000 | 0) % 5 === 0) host.log('video: ' + line);
+  if ((Date.now() / 1000 | 0) % 5 === 0) host.log('audio: chunks=' + aChunks + ' ctx=' + (audioCtx ? audioCtx.state : '-') + ' track=' + (audioTrack ? audioTrack.readyState + (audioTrack.muted ? '/muted' : '') : '-') + ' label=' + audioLabel);
   vFrames = 0; vBytes = 0;
 }, 1000);
 

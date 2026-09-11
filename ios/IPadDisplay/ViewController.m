@@ -75,6 +75,11 @@ static const int kAudioBuffers = 6;
     // Never dim / lock while acting as a monitor.
     [UIApplication sharedApplication].idleTimerDisabled = YES;
 
+    // Playback category: sound keeps playing with the mute switch on and mixes with nothing else.
+    NSError *sessErr = nil;
+    [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:&sessErr];
+    [[AVAudioSession sharedInstance] setActive:YES error:&sessErr];
+
     _pending = [NSMutableData data];
     _freeBuffers = [NSMutableArray array];
 

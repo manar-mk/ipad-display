@@ -184,9 +184,9 @@ while ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { break }; $p =
     'down'   { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(2,0,0,0,[UIntPtr]::Zero) }
     'up'     { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(4,0,0,0,[UIntPtr]::Zero) }
     'rclick' { [M]::SetCursorPos([int]$p[1],[int]$p[2]); [M]::mouse_event(8,0,0,0,[UIntPtr]::Zero); [M]::mouse_event(16,0,0,0,[UIntPtr]::Zero) }
-    'wheel'  { [M]::mouse_event(0x0800,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero) }
-    'hwheel' { [M]::mouse_event(0x1000,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero) }
-    'zoom'   { [M]::Focus(); [M]::keybd_event(0x11,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 15; [M]::mouse_event(0x0800,0,0,[uint32]([int]$p[1] -band 0xFFFFFFFF),[UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [M]::keybd_event(0x11,0,2,[UIntPtr]::Zero) }
+    'wheel'  { [M]::mouse_event(0x0800,0,0,[BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$p[1]),0),[UIntPtr]::Zero) }
+    'hwheel' { [M]::mouse_event(0x1000,0,0,[BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$p[1]),0),[UIntPtr]::Zero) }
+    'zoom'   { [M]::Focus(); [M]::keybd_event(0x11,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 15; [M]::mouse_event(0x0800,0,0,[BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$p[1]),0),[UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [M]::keybd_event(0x11,0,2,[UIntPtr]::Zero) }
   } }`;
       mouseHelper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
       mouseHelper.on('exit', () => { mouseHelper = null; });
