@@ -606,7 +606,7 @@ ipcMain.handle('setup-audio', () => {
   const bin = macHelper('audiosetup');
   if (!bin.path) return { error: bin.error };
   const r = require('child_process').spawnSync(bin.path, [], { encoding: 'utf8', timeout: 20000 });
-  extAudio.probed = 0; // let the next connect find the cable
+  extAudio.probed = 0; startExternalAudio(); // pick the cable up right away if the app is connected
   return { code: r.status, out: ((r.stdout || '') + (r.stderr || '')).trim() };
 });
 ipcMain.on('log', (e, msg) => console.log('[panel]', msg));
