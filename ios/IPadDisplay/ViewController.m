@@ -256,46 +256,49 @@ static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); 
     OSStatus st = CMVideoFormatDescriptionCreateFromH264ParameterSets(kCFAllocatorDefault, cnt, ptrs, sizes, 4, &fmt);
     if (st != noErr || !fmt) return;
     CMVideoDimensions dim = CMVideoFormatDescriptionGetDimensions(fmt);
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (_videoFormat) CFRelease(_videoFormat);
-        _videoFormat = fmt;
-        _videoSize = CGSizeMake(dim.width, dim.height);
-        [_videoLayer flush];
-        _waitKey = YES;
-    });
+    // Runs on the serial read queue, same as the frames: no hop through the main thread.
+    if (_videoFormat) CFRelease(_videoFormat);
+    _videoFormat = fmt;
+    _videoSize = CGSizeMake(dim.width, dim.height);
+    [_videoLayer flush];
+    _waitKey = YES;
 }
 
+// Called on the read queue. AVSampleBufferDisplayLayer accepts samples from any thread, so the frame goes
+// straight from the socket to the decoder; only the first-frame UI switch touches the main thread.
 - (void)frameServerDidReceiveVideoFrame:(NSData *)avcc keyframe:(BOOL)key pts:(uint32_t)ptsMs {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (!_videoFormat) { [self.server sendKeyframeRequest]; return; }
-        if (_waitKey && !key) return;
-        _waitKey = NO;
-        if (_videoLayer.status == AVQueuedSampleBufferRenderingStatusFailed) { [_videoLayer flush]; _waitKey = YES; [self.server sendKeyframeRequest]; return; }
+    if (!_videoFormat) { [self.server sendKeyframeRequest]; return; }
+    if (_waitKey && !key) return;
+    _waitKey = NO;
+    if (_videoLayer.status == AVQueuedSampleBufferRenderingStatusFailed) { [_videoLayer flush]; _waitKey = YES; [self.server sendKeyframeRequest]; return; }
 
-        CMBlockBufferRef block = NULL;
-        size_t len = avcc.length;
-        if (CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, NULL, len, kCFAllocatorDefault, NULL, 0, len, 0, &block) != noErr) return;
-        [avcc enumerateByteRangesUsingBlock:^(const void *bytes, NSRange range, BOOL *stop) { CMBlockBufferReplaceDataBytes(bytes, block, range.location, range.length); }];
+    CMBlockBufferRef block = NULL;
+    size_t len = avcc.length;
+    if (CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, NULL, len, kCFAllocatorDefault, NULL, 0, len, 0, &block) != noErr) return;
+    [avcc enumerateByteRangesUsingBlock:^(const void *bytes, NSRange range, BOOL *stop) { CMBlockBufferReplaceDataBytes(bytes, block, range.location, range.length); }];
 
-        CMSampleBufferRef sample = NULL;
-        CMSampleTimingInfo timing;
-        timing.duration = CMTimeMake(1, 60);
-        timing.presentationTimeStamp = CMTimeMake(ptsMs, 1000);
-        timing.decodeTimeStamp = kCMTimeInvalid;
-        size_t sampleSize = len;
-        OSStatus st = CMSampleBufferCreate(kCFAllocatorDefault, block, true, NULL, NULL, _videoFormat, 1, 1, &timing, 1, &sampleSize, &sample);
-        CFRelease(block);
-        if (st != noErr || !sample) return;
-        CFArrayRef att = CMSampleBufferGetSampleAttachmentsArray(sample, true);
-        if (att && CFArrayGetCount(att) > 0) {
-            CFMutableDictionaryRef d = (CFMutableDictionaryRef)CFArrayGetValueAtIndex(att, 0);
-            CFDictionarySetValue(d, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
-            if (!key) CFDictionarySetValue(d, kCMSampleAttachmentKey_NotSync, kCFBooleanTrue);
-        }
-        if (!_videoActive) { _videoActive = YES; _videoLayer.hidden = NO; self.screen.hidden = YES; self.status.hidden = YES; }
-        [_videoLayer enqueueSampleBuffer:sample];
-        CFRelease(sample);
-    });
+    CMSampleBufferRef sample = NULL;
+    CMSampleTimingInfo timing;
+    timing.duration = CMTimeMake(1, 60);
+    timing.presentationTimeStamp = CMTimeMake(ptsMs, 1000);
+    timing.decodeTimeStamp = kCMTimeInvalid;
+    size_t sampleSize = len;
+    OSStatus st = CMSampleBufferCreate(kCFAllocatorDefault, block, true, NULL, NULL, _videoFormat, 1, 1, &timing, 1, &sampleSize, &sample);
+    CFRelease(block);
+    if (st != noErr || !sample) return;
+    CFArrayRef att = CMSampleBufferGetSampleAttachmentsArray(sample, true);
+    if (att && CFArrayGetCount(att) > 0) {
+        CFMutableDictionaryRef d = (CFMutableDictionaryRef)CFArrayGetValueAtIndex(att, 0);
+        CFDictionarySetValue(d, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
+        if (!key) CFDictionarySetValue(d, kCMSampleAttachmentKey_NotSync, kCFBooleanTrue);
+    }
+    if (!_videoActive) {
+        _videoActive = YES;
+        dispatch_async(dispatch_get_main_queue(), ^{ _videoLayer.hidden = NO; self.screen.hidden = YES; self.status.hidden = YES; });
+    }
+    [_videoLayer enqueueSampleBuffer:sample];
+    CFRelease(sample);
+    [self.server sendPresented:ptsMs]; // latency probe: host compares with its clock
 }
 
 - (void)stopVideo {

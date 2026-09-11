@@ -15,6 +15,7 @@
 //   'Z'  pinch: [int16 BE delta]  (delta of scale*1000 since the last message; >0 zoom in)
 //   'R'  right click (long press): [uint16 BE x][uint16 BE y]
 //   'K'  please send a keyframe (decoder lost sync)
+//   'P'  presented: [uint32 BE pts ms] of the video frame just handed to the display (latency probe)
 // Discovery: every 2 s the device broadcasts UDP "IPADDISPLAY <tcpPort>" to 255.255.255.255:7802.
 //
 // Transport: USB via usbmuxd or plain Wi-Fi; the app does not care which.
@@ -42,5 +43,6 @@
 - (void)sendZoomDelta:(int16_t)delta;
 - (void)sendRightClickX:(uint16_t)x y:(uint16_t)y;
 - (void)sendKeyframeRequest;
+- (void)sendPresented:(uint32_t)ptsMs;
 + (NSString *)wifiAddress; // IPv4 of en0, or nil
 @end

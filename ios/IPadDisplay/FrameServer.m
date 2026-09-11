@@ -196,6 +196,13 @@ static BOOL readFully(int fd, void *buf, size_t n) {
     [self writeBytes:msg length:1 toFd:fd];
 }
 
+- (void)sendPresented:(uint32_t)ptsMs {
+    int fd = _clientFd;
+    if (fd < 0) return;
+    uint8_t msg[5] = { 'P', (uint8_t)(ptsMs >> 24), (uint8_t)(ptsMs >> 16), (uint8_t)(ptsMs >> 8), (uint8_t)ptsMs };
+    [self writeBytes:msg length:sizeof(msg) toFd:fd];
+}
+
 - (void)readLoop:(int)fd {
     uint8_t header[4];
     NSMutableData *body = [NSMutableData data];
