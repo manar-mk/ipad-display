@@ -333,7 +333,7 @@ static void dbg(NSString *fmt, ...) {
 
 static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRef buf) {
     ViewController *vc = (__bridge ViewController *)userData;
-    [vc audioBufferFree:buf];
+    [vc audioBufferFree:buf fromQueue:q];
 }
 
 - (void)frameServerDidReceiveAudioFormat:(uint32_t)sampleRate channels:(uint8_t)channels {
@@ -382,10 +382,10 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
     });
 }
 
-- (void)audioBufferFree:(AudioQueueBufferRef)buf {
-    // called on the AudioQueue thread
+- (void)audioBufferFree:(AudioQueueBufferRef)buf fromQueue:(AudioQueueRef)q {
+    // called on the AudioQueue thread; a buffer from a queue that was already replaced must not be reused
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!_queue) return;
+        if (!_queue || q != _queue) return;
         [_freeBuffers addObject:[NSValue valueWithPointer:buf]];
         [self pumpAudio];
     });
@@ -403,7 +403,7 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
         [_pending replaceBytesInRange:NSMakeRange(0, n) withBytes:NULL length:0];
         [_freeBuffers removeLastObject];
         OSStatus es = AudioQueueEnqueueBuffer(_queue, buf, 0, NULL);
-        if (es != noErr) { dbg(@"AudioQueueEnqueueBuffer failed %d", (int)es); [_freeBuffers addObject:[NSValue valueWithPointer:buf]]; break; }
+        if (es != noErr) { dbg(@"AudioQueueEnqueueBuffer failed %d (buffer dropped)", (int)es); continue; } // never put a rejected buffer back
         if (!_audioStarted && _freeBuffers.count <= kAudioBuffers - 3) { OSStatus ss = AudioQueueStart(_queue, NULL); _audioStarted = YES; dbg(@"AudioQueueStart -> %d", (int)ss); }
     }
 }
