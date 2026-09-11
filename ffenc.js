@@ -116,4 +116,38 @@ class FfmpegEncoder {
   stop() { if (this.proc) { const p = this.proc; this.proc = null; try { p.kill(); } catch (e) { /* gone */ } } }
 }
 
-module.exports = { findFfmpeg, probeOutputs, FfmpegEncoder, AnnexBParser };
+// DirectShow audio capture devices, e.g. "CABLE Output (VB-Audio Virtual Cable)".
+function listAudioDevices(ffmpeg) {
+  return new Promise((resolve) => {
+    execFile(ffmpeg, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'], { timeout: 8000, windowsHide: true }, (err, stdout, stderr) => {
+      const names = [];
+      for (const line of (stderr || '').split(/\r?\n/)) { const m = /"([^"]+)" \(audio\)/.exec(line); if (m) names.push(m[1]); }
+      resolve(names);
+    });
+  });
+}
+
+// Captures a dshow audio device with ffmpeg into fixed-size PCM chunks (s16le, mono, `rate` Hz).
+// Runs in the main process, so it keeps going when the panel window is hidden or throttled.
+class AudioCapture {
+  constructor(ffmpeg) { this.ffmpeg = ffmpeg; this.proc = null; this.onChunk = null; this.onExit = null; }
+  start({ device, rate = 22050, chunkSamples = 2048 }) {
+    this.stop();
+    const args = ['-hide_banner', '-loglevel', 'warning', '-f', 'dshow', '-audio_buffer_size', '20', '-i', `audio=${device}`, '-ac', '1', '-ar', String(rate), '-f', 's16le', 'pipe:1'];
+    const p = spawn(this.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    this.proc = p;
+    const chunkBytes = chunkSamples * 2;
+    let acc = Buffer.alloc(0);
+    p.stdout.on('data', (d) => {
+      acc = acc.length ? Buffer.concat([acc, d]) : d;
+      while (acc.length >= chunkBytes) { const c = acc.subarray(0, chunkBytes); acc = acc.subarray(chunkBytes); if (this.onChunk) this.onChunk(Buffer.from(c)); }
+    });
+    p.stderr.on('data', (d) => { const s = d.toString().trim(); if (s) console.error('[ffmpeg-audio]', s.slice(0, 300)); });
+    p.on('exit', (code) => { if (this.proc === p) { this.proc = null; this.onExit && this.onExit(code); } });
+    p.on('error', (e) => { console.error('[ffmpeg-audio] spawn:', e.message); if (this.proc === p) { this.proc = null; this.onExit && this.onExit(-1); } });
+  }
+  get running() { return !!this.proc; }
+  stop() { if (this.proc) { const p = this.proc; this.proc = null; try { p.kill(); } catch (e) { /* gone */ } } }
+}
+
+module.exports = { findFfmpeg, probeOutputs, FfmpegEncoder, AnnexBParser, listAudioDevices, AudioCapture };

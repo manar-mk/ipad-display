@@ -120,7 +120,29 @@ async function startExternal() {
   ext.enc.start({ outputIdx: idx, fps: Math.min(60, Math.max(15, settings.fps || 60)), bitrateKbps: settings.bitrate || 8000, gop: 120 });
   console.log('[ffmpeg] started on DXGI output', idx);
 }
-function stopExternal() { ext.active = false; clearTimeout(ext.restartTimer); if (ext.enc) ext.enc.stop(); }
+function stopExternal() { ext.active = false; clearTimeout(ext.restartTimer); if (ext.enc) ext.enc.stop(); stopExternalAudio(); }
+
+// ffmpeg dshow capture of the virtual cable for the app (see onAudioChunk); the renderer path stays for Safari.
+const extAudio = { device: null, probed: false, cap: null, active: false };
+async function startExternalAudio() {
+  if (!settings.audio || !ext.path || extAudio.active) return;
+  if (!extAudio.probed) {
+    extAudio.probed = true;
+    const names = await ffenc.listAudioDevices(ext.path);
+    extAudio.device = names.find((n) => /CABLE Output|VB-Audio|Virtual Cable|iPad/i.test(n)) || null;
+    console.log('[ffmpeg-audio] devices:', names.join(' | '), '-> using', extAudio.device);
+  }
+  if (!extAudio.device || tcp.state !== 'connected') return;
+  if (!extAudio.cap) extAudio.cap = new ffenc.AudioCapture(ext.path);
+  extAudio.active = true;
+  if (!audioFormat || audioFormat.rate !== 22050 || audioFormat.channels !== 1) onAudioFormat(22050, 1);
+  else if (tcp.socket) tcp.socket.write(audioFormatMsg());
+  extAudio.cap.onChunk = (buf) => onAudioChunk(buf, 'ffmpeg');
+  extAudio.cap.onExit = (code) => { if (extAudio.active) { console.error('[ffmpeg-audio] exited', code, '- restarting'); extAudio.active = false; setTimeout(startExternalAudio, 1000); } };
+  extAudio.cap.start({ device: extAudio.device, rate: 22050, chunkSamples: 2048 });
+  console.log('[ffmpeg-audio] started on', extAudio.device);
+}
+function stopExternalAudio() { extAudio.active = false; if (extAudio.cap) extAudio.cap.stop(); }
 
 function requestKeyframe(why) {
   needKey = true;
@@ -161,11 +183,15 @@ function onAudioFormat(rate, channels) {
 }
 
 const audioStats = { sent: 0, dropped: 0 };
-function onAudioChunk(buf) {
+// Two producers: the panel's Web Audio capture (feeds Safari clients, and the app when ffmpeg audio is off)
+// and ffmpeg dshow capture in this process (feeds the app; immune to renderer throttling).
+function onAudioChunk(buf, source) {
   if (!settings.audio) return;
   const m = frameMsg('A', buf);
+  const appFromRenderer = source === 'renderer' && !extAudio.active;
   // audio is small (4 KB per chunk): send it ahead of video unless the socket is badly backed up
-  if (tcp.socket && tcp.state === 'connected') { if (tcp.socket.writableLength < 2 * 1024 * 1024) { tcp.socket.write(m); audioStats.sent++; } else audioStats.dropped++; }
+  if ((source === 'ffmpeg' || appFromRenderer) && tcp.socket && tcp.state === 'connected') { if (tcp.socket.writableLength < 2 * 1024 * 1024) { tcp.socket.write(m); audioStats.sent++; } else audioStats.dropped++; }
+  if (source !== 'renderer') return; // Safari clients keep getting the renderer's stream
   for (const [ws] of wsClients) if (ws.readyState === ws.OPEN && ws.bufferedAmount < 256 * 1024) ws.send(m, { binary: true });
 }
 
@@ -310,6 +336,7 @@ async function tcpTry() {
   if (audioFormat) s.write(audioFormatMsg());
   if (encoderMode() === 'ffmpeg') { videoConfig = null; latencyMs = null; startExternal(); }
   else if (videoConfig) { s.write(frameMsg('H', videoConfig)); requestKeyframe('connect'); }
+  startExternalAudio(); // no-op without ffmpeg / a virtual cable
   sendTcp();
   s.on('data', onDeviceData);
   const drop = () => {
@@ -525,7 +552,7 @@ ipcMain.handle('install-vdd', () => new Promise((resolve) => {
 ipcMain.on('log', (e, msg) => console.log('[panel]', msg));
 ipcMain.on('frame', (e, ab) => onNewFrame(Buffer.from(ab)));
 ipcMain.on('audio-format', (e, rate, channels) => onAudioFormat(rate, channels));
-ipcMain.on('audio', (e, ab) => onAudioChunk(Buffer.from(ab)));
+ipcMain.on('audio', (e, ab) => onAudioChunk(Buffer.from(ab), 'renderer'));
 ipcMain.on('video-config', (e, ab) => onVideoConfig(Buffer.from(ab)));
 ipcMain.on('video-chunk', (e, ab, key, ptsMs) => onVideoChunk(Buffer.from(ab), !!key, ptsMs | 0));
 ipcMain.handle('video-stats', () => { const dt = (Date.now() - videoStats.t) / 1000 || 1; const r = { fps: videoStats.frames / dt, kbps: videoStats.bytes * 8 / dt / 1000, dropped: videoStats.dropped, connected: tcp.state === 'connected', external: ext.active, encoder: encoderMode(), latency: latencyMs === null ? null : Math.round(latencyMs), audioSent: audioStats.sent, audioDropped: audioStats.dropped }; audioStats.sent = 0; audioStats.dropped = 0; videoStats.frames = 0; videoStats.bytes = 0; videoStats.dropped = 0; videoStats.t = Date.now(); return r; });
