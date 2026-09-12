@@ -136,7 +136,10 @@ function stopExternal() { ext.active = false; clearTimeout(ext.restartTimer); if
 // they stay in the system after the host stops (a phantom screen, sound going nowhere). On macOS the virtual
 // display lives only while the vdisplay helper runs, so nothing to undo there.
 const WIN = process.platform === 'win32';
-const SESSION_PS = path.join(__dirname, 'driver', 'windows', 'session.ps1');
+// driver/ holds things external tools must read or run (PowerShell scripts, the VDD driver, Swift helpers):
+// in a packaged app it is unpacked next to app.asar (electron-builder asarUnpack), so use that real path.
+const DRIVER_DIR = path.join(__dirname, 'driver').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+const SESSION_PS = path.join(DRIVER_DIR, 'windows', 'session.ps1');
 let sessionOn = false;
 function runSession(action, sync) {
   if (!WIN) return Promise.resolve('');
@@ -301,10 +304,19 @@ while ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { break }; $p =
 // vdisplay: a virtual 1024x768 @ 60 Hz monitor "iPad Display" through the private CGVirtualDisplay API (as DeskPad does);
 // it lives while the helper process runs. mousehelper: CGEvent mouse/scroll injection (needs Accessibility permission).
 const mac = { vdisplay: null, vdisplayId: null, vdisplayError: null, axTrusted: null, mouseError: null };
-const MAC_DIR = path.join(__dirname, 'driver', 'macos');
+const MAC_DIR = path.join(DRIVER_DIR, 'macos');
 function macHelper(name) {
-  const bin = path.join(MAC_DIR, name), src = bin + '.swift';
-  if (fs.existsSync(bin) && fs.statSync(bin).mtimeMs >= fs.statSync(src).mtimeMs) return { path: bin };
+  const src = path.join(MAC_DIR, name + '.swift');
+  let bin = path.join(MAC_DIR, name);
+  // packaged .app: ship prebuilt (driver/macos/build.sh in CI); never rebuild inside the bundle
+  if (app.isPackaged && fs.existsSync(bin)) return { path: bin };
+  if (!app.isPackaged && fs.existsSync(bin) && fs.statSync(bin).mtimeMs >= fs.statSync(src).mtimeMs) return { path: bin };
+  if (app.isPackaged) { // no prebuilt helper (e.g. a build from another machine): compile into the user's data dir
+    const dir = path.join(app.getPath('userData'), 'helpers');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* exists */ }
+    bin = path.join(dir, name);
+    if (fs.existsSync(bin)) return { path: bin };
+  }
   const extra = { vdisplay: ['-import-objc-header', path.join(MAC_DIR, 'CGVirtualDisplay.h'), '-framework', 'CoreGraphics'], mousehelper: ['-framework', 'ApplicationServices'], audiosetup: ['-framework', 'CoreAudio'] };
   const args = ['-O', src, '-o', bin, ...(extra[name] || [])];
   console.log('[mac] building', name, 'with swiftc');
@@ -671,7 +683,7 @@ ipcMain.handle('open-external', (e, url) => shell.openExternal(url));
 ipcMain.handle('install-vdd', () => new Promise((resolve) => {
   if (MAC) return startVdisplay().then((r) => resolve(r.error ? { error: r.error, code: 1 } : { code: 0, out: 'виртуальный монитор «iPad Display» создан, id ' + r.id }));
   if (process.platform !== 'win32') return resolve({ error: 'Только для Windows и macOS.' });
-  const script = path.join(__dirname, 'driver', 'windows', 'install-vdd.ps1');
+  const script = path.join(DRIVER_DIR, 'windows', 'install-vdd.ps1');
   const log = path.join(app.getPath('userData'), 'vdd-install.log');
   const inner = `& '${script}' *> '${log}'`;
   const ps = spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process powershell -Verb RunAs -Wait -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-Command',${JSON.stringify(inner)})`], { windowsHide: true });

@@ -8,9 +8,38 @@
     "test-client": "node tools/test-client.js",
     "setup": "node tools/setup.js",
     "icons": "node tools/make-icons.js",
-    "shortcut": "node tools/make-shortcut.js"
+    "shortcut": "node tools/make-shortcut.js",
+    "dist": "electron-builder",
+    "helpers:mac": "bash driver/macos/build.sh"
   },
   "license": "MIT",
+  "build": {
+    "appId": "com.manar.ipaddisplay",
+    "productName": "iPad Display",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": { "output": "dist" },
+    "files": [
+      "main.js", "preload.js", "panel.html", "i18n.js", "ffenc.js", "usbmux.js", "applaunch.js",
+      "client/**", "assets/icon.png", "assets/icon.ico", "driver/**", "tools/*.js", "package.json"
+    ],
+    "asarUnpack": ["driver/**"],
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }, { "target": "zip", "arch": ["arm64", "x64"] }],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.utilities",
+      "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Reads the BlackHole virtual audio device to send sound to the iPad.",
+        "NSCameraUsageDescription": "Not used."
+      }
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "perMachine": false },
+    "publish": null
+  },
   "dependencies": {
     "bplist-parser": "^0.3.2",
     "plist": "^3.1.1",
@@ -19,6 +48,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "electron": "^33.2.0"
+    "electron": "^33.2.0",
+    "electron-builder": "^26.15.3"
   }
 }

@@ -8,3 +8,4 @@ out/
 tools/*.ipa
 tools/*.jpg
 tools/*.log
+dist/

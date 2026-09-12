@@ -35,11 +35,13 @@ node tools/usbmux-list.js
 
 ## Установка
 
-Приложение собирается в GitHub Actions (`.github/workflows/ios-build.yml`) — Xcode не нужен:
-на Linux-раннере работают clang и ld64 из тулчейна theos с SDK iPhoneOS 9.3.
+Приложение собирается в GitHub Actions (`.github/workflows/build.yml`, job `ipad-app`) — Xcode не нужен:
+на Linux-раннере работают clang и ld64 из тулчейна theos с SDK iPhoneOS 9.3. Готовый архив лежит
+в [Releases](https://github.com/manar-mk/ipad-display/releases) как `IPadDisplay-iPad-app.zip`
+(это тот же `IPadDisplay.app.zip`, что и артефакт workflow).
 
 ```bash
-# 1. взять последнюю успешную сборку
+# 1. взять последнюю успешную сборку (или скачать IPadDisplay-iPad-app.zip из Releases в out/)
 gh run download --repo manar-mk/ipad-display -n IPadDisplay.app -D out
 cd out && unzip -o IPadDisplay.app.zip && cd ..
 

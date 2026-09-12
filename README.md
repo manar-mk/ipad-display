@@ -32,7 +32,23 @@
 
 ---
 
-## Установка
+## Готовые сборки
+
+Каждый push в `main` собирает в GitHub Actions (workflow `build`) три артефакта, а тег `v*` публикует
+их на странице **[Releases](https://github.com/manar-mk/ipad-display/releases)**:
+
+| Файл | Что это |
+|---|---|
+| `iPad Display-<версия>-win-x64.exe` | установщик для Windows (NSIS); рядом лежит portable-вариант, который просто запускается |
+| `iPad Display-<версия>-mac-arm64.dmg` / `-mac-x64.dmg` (и `.zip`) | приложение для macOS на Apple Silicon / Intel |
+| `IPadDisplay-iPad-app.zip` | приложение для iPad (armv7, iOS 9); ставится по инструкции [docs/IPAD-APP.md](docs/IPAD-APP.md) |
+
+Сборки не подписаны: Windows SmartScreen — «Подробнее → Выполнить в любом случае»; macOS — правый клик
+по приложению → «Открыть» (или `xattr -d com.apple.quarantine "/Applications/iPad Display.app"`).
+Хосту всё равно нужны ffmpeg (и на Windows — «Apple Devices» для кабеля, на macOS — BlackHole для звука):
+команды ниже. Собрать локально: `npm install && npm run dist` (на macOS перед этим `npm run helpers:mac`).
+
+## Установка из исходников
 
 ### 1. Хост на Windows
 
