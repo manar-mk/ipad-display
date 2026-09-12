@@ -130,8 +130,10 @@ static const uint16_t kBeaconPort = 7802;
 }
 
 - (void)sendBeacon {
-    if (_beaconFd < 0 || _clientFd >= 0) return; // silent while a host is connected
-    NSString *msg = [NSString stringWithFormat:@"IPADDISPLAY %u", (unsigned)_port];
+    if (_beaconFd < 0) return;
+    // Keep announcing even while a host is showing on us, with a "busy" mark: if that host dies without
+    // closing the socket, we would otherwise stay invisible to everyone until TCP notices (see keepalive).
+    NSString *msg = [NSString stringWithFormat:@"IPADDISPLAY %u%@", (unsigned)_port, _clientFd >= 0 ? @" busy" : @""];
     const char *bytes = msg.UTF8String;
     struct sockaddr_in to;
     memset(&to, 0, sizeof(to));
@@ -153,6 +155,17 @@ static const uint16_t kBeaconPort = 7802;
     int yes = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
     setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
+    // Notice a host that died without closing the socket (killed, unplugged, crashed) in ~25 s instead of
+    // hanging on to it forever: idle 10 s, then three probes 5 s apart.
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(yes));
+    int idle = 10, intvl = 5, cnt = 3;
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &idle, sizeof(idle));
+#ifdef TCP_KEEPINTVL
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+#endif
+#ifdef TCP_KEEPCNT
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt));
+#endif
 
     // host selection: USB (loopback via usbmuxd) is always fine; over Wi-Fi only the preferred host, if one is set
     NSString *peerIp = @(inet_ntoa(peer.sin_addr));

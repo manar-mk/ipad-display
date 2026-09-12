@@ -463,12 +463,14 @@ const declinedUntil = new Map(); // ip (or 'usb') -> timestamp until which we le
 function startDiscovery() {
   const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
   sock.on('message', (msg, rinfo) => {
-    const m = /^IPADDISPLAY (\d+)/.exec(msg.toString());
+    const m = /^IPADDISPLAY (\d+)( busy)?/.exec(msg.toString());
     if (!m) return;
-    discovered.set(rinfo.address, { port: parseInt(m[1], 10), seen: Date.now() });
+    const busy = !!m[2]; // another host is already showing on that iPad
+    discovered.set(rinfo.address, { port: parseInt(m[1], 10), seen: Date.now(), busy });
     notifyStatus();
     // Answer with our name so the iPad can list hosts and let the user pick one.
     sock.send(Buffer.from('IPADDISPLAY-HOST ' + os.hostname()), rinfo.port, rinfo.address);
+    if (busy) return;                                          // it is showing someone else
     if (declinedUntil.get(rinfo.address) > Date.now()) return; // the user chose another host on the iPad
     // The app only beacons while no host is connected, so a beacon means it is free: take it over Wi-Fi.
     if (settings.autoconnect && tcp.state !== 'connected' && !(tcp.mode === 'tcp' && tcp.host === rinfo.address && tcp.want)) {
@@ -560,7 +562,7 @@ function notifyStatus() {
   win.webContents.send('status', {
     ws: [...wsClients.values()].map((s) => s.ip),
     tcp: { state: tcp.state, mode: tcp.mode, host: tcp.host, port: tcp.port, error: tcp.error },
-    discovered: [...discovered.keys()],
+    discovered: [...discovered].map(([ip, d]) => ip + (d.busy ? ' (занят)' : '')),
     mac: MAC ? { axTrusted: mac.axTrusted, mouseError: mac.mouseError, vdisplay: mac.vdisplayId, vdisplayError: mac.vdisplayError, screenAccess: systemPreferences.getMediaAccessStatus('screen') } : null,
   });
 }
@@ -585,9 +587,13 @@ async function pickSource() {
 // ---------- Electron window ----------
 function createWindow() {
   win = new BrowserWindow({
-    width: 600, height: 880, title: 'iPad Display',
+    width: 720, height: 900, minWidth: 560, title: 'iPad Display',
+    backgroundColor: '#11131a',
+    icon: path.join(__dirname, 'assets', WIN ? 'icon.ico' : 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, backgroundThrottling: false },
   });
+  win.setMenuBarVisibility(false); // the default Electron menu says nothing useful here
+  if (MAC && app.dock) { try { app.dock.setIcon(path.join(__dirname, 'assets', 'icon.png')); } catch (e) { /* dev only */ } }
   win.loadFile('panel.html');
   win.on('closed', () => { win = null; });
 }
