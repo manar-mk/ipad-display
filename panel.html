@@ -285,7 +285,7 @@ async function loadInfo() {
   settings = { ...info.settings, platform: info.platform };
   if (info.platform === 'darwin') {
     const o = $('#codec').querySelector('option[value=ffmpeg]'); if (o) o.textContent = t('q.codecFfmpegMac');
-    $('#audiobtn').hidden = false; $('#audiobtn').title = 'Многовыходное устройство BlackHole 2ch + динамики: звук идёт и на Mac, и на iPad. Нужен brew install blackhole-2ch.';
+    $('#audiobtn').hidden = false; $('#audiobtn').title = t('a.makeDeviceHint');
   }
   $('#qr').src = info.qr || '';
   $('#urls').innerHTML = info.urls.length

@@ -692,12 +692,13 @@ ipcMain.handle('install-vdd', () => new Promise((resolve) => {
   const ps = spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process powershell -Verb RunAs -Wait -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-Command',${JSON.stringify(inner)})`], { windowsHide: true });
   ps.on('exit', (code) => { let out = ''; try { out = fs.readFileSync(log, 'utf8'); } catch (e) { /* no log */ } resolve({ code, out }); });
 }));
-// macOS: Multi-Output Device "iPad Display + динамики" (BlackHole + built-in speakers), see driver/macos/audiosetup.swift
+// macOS: output devices "iPad Display" (cable only: sound goes to the iPad and the Mac is silent) and
+// "iPad Display + динамики" (both), then select the first one. See driver/macos/audiosetup.swift.
 ipcMain.handle('setup-audio', () => {
   if (!MAC) return { error: 'Только для macOS' };
   const bin = macHelper('audiosetup');
   if (!bin.path) return { error: bin.error };
-  const r = require('child_process').spawnSync(bin.path, [], { encoding: 'utf8', timeout: 20000 });
+  const r = require('child_process').spawnSync(bin.path, ['--default'], { encoding: 'utf8', timeout: 20000 });
   extAudio.probed = 0; startExternalAudio(); // pick the cable up right away if the app is connected
   return { code: r.status, out: ((r.stdout || '') + (r.stderr || '')).trim() };
 });
