@@ -1,9 +1,10 @@
-node_modules/
-tools/*.log
-tools/*.jpg
 .DS_Store
-tools/*.ipa
-out/
-driver/macos/vdisplay
-driver/macos/mousehelper
+build/
 driver/macos/audiosetup
+driver/macos/mousehelper
+driver/macos/vdisplay
+node_modules/
+out/
+tools/*.ipa
+tools/*.jpg
+tools/*.log
