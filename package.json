@@ -1,6 +1,6 @@
 {
   "name": "ipad-display",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Use an old iPad as a second monitor for Windows and macOS: hardware H.264, sound, touch and gestures",
   "main": "main.js",
   "scripts": {
@@ -37,7 +37,8 @@
       "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
       "icon": "assets/icon.ico"
     },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "perMachine": false },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "perMachine": false, "artifactName": "${productName}-${version}-setup-win-${arch}.${ext}" },
+    "portable": { "artifactName": "${productName}-${version}-portable-win-${arch}.${ext}" },
     "publish": null
   },
   "dependencies": {

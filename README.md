@@ -39,7 +39,7 @@
 
 | Файл | Что это |
 |---|---|
-| `iPad Display-<версия>-win-x64.exe` | установщик для Windows (NSIS); рядом лежит portable-вариант, который просто запускается |
+| `iPad Display-<версия>-setup-win-x64.exe` | установщик для Windows (NSIS); `…-portable-win-x64.exe` — тот же хост без установки, просто запускается |
 | `iPad Display-<версия>-mac-arm64.dmg` / `-mac-x64.dmg` (и `.zip`) | приложение для macOS на Apple Silicon / Intel |
 | `IPadDisplay-iPad-app.zip` | приложение для iPad (armv7, iOS 9); ставится по инструкции [docs/IPAD-APP.md](docs/IPAD-APP.md) |
 

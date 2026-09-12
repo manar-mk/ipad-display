@@ -136,10 +136,36 @@ class AnnexBParser {
     this.sentCfg = avcC;
     this.onConfig(avcC);
   }
+  // The current access unit is known to be complete (end of a container chunk): take the buffered tail as its
+  // last NAL and emit it now instead of waiting for the next picture's first NAL (one frame of latency).
+  end() {
+    this.push(Buffer.from([0, 0, 1]));
+    this.buf = Buffer.alloc(0);
+    this.flush();
+  }
   flush() {
     if (!this.au.length) return;
     this.onFrame(Buffer.concat(this.au), this.auKey);
     this.au = []; this.auKey = false; this.hasSlice = false;
+  }
+}
+
+// AVI over a pipe: every video chunk ('00dc' + LE length + Annex B access unit) is exactly one picture, so the
+// frame boundary is known the moment the chunk is in (raw .h264 only reveals it with the next picture's first NAL).
+class AviChunks {
+  constructor(onChunk) { this.onChunk = onChunk; this.buf = Buffer.alloc(0); this.inMovi = false; }
+  push(chunk) {
+    this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;
+    if (!this.inMovi) { const i = this.buf.indexOf('movi'); if (i < 0) { if (this.buf.length > 1 << 20) this.buf = this.buf.subarray(-4); return; } this.buf = this.buf.subarray(i + 4); this.inMovi = true; }
+    for (;;) {
+      if (this.buf.length < 8) return;
+      const id = this.buf.toString('latin1', 0, 4), len = this.buf.readUInt32LE(4);
+      if (id === 'LIST' || id === 'RIFF') { if (this.buf.length < 12) return; this.buf = this.buf.subarray(12); continue; } // step into (AVIX/movi of the next RIFF)
+      const total = 8 + len + (len & 1);
+      if (this.buf.length < total) return;
+      if (id[2] === 'd' && (id[3] === 'c' || id[3] === 'b')) this.onChunk(this.buf.subarray(8, 8 + len));
+      this.buf = this.buf.subarray(total);
+    }
   }
 }
 
@@ -152,15 +178,16 @@ class FfmpegEncoder {
       ? ['-hide_banner', '-loglevel', 'warning', '-f', 'avfoundation', '-framerate', String(fps), '-pixel_format', 'nv12', '-capture_cursor', '1', '-i', `${outputIdx}:none`,
         ...(maxSize ? ['-vf', `scale='min(${maxSize[0]},iw)':'min(${maxSize[1]},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`] : []),
         '-c:v', 'h264_videotoolbox', '-realtime', '1', '-profile:v', 'baseline', '-b:v', `${bitrateKbps}k`, '-g', String(gop), '-bf', '0',
-        '-f', 'h264', 'pipe:1']
+        '-flush_packets', '1', '-f', 'avi', 'pipe:1'] // AVI: exact frame boundaries, see AviChunks
       : ['-hide_banner', '-loglevel', 'warning', '-init_hw_device', 'd3d11va',
         '-filter_complex', `ddagrab=output_idx=${outputIdx}:framerate=${fps},hwdownload,format=bgra,format=nv12`,
         '-c:v', 'h264_mf', '-hw_encoding', '1', '-rate_control', 'ld_vbr', '-b:v', `${bitrateKbps}k`, '-g', String(gop), '-scenario', 'display_remoting',
         '-f', 'h264', 'pipe:1'];
     const parser = new AnnexBParser((c) => this.onConfig && this.onConfig(c), (f, k) => this.onFrame && this.onFrame(f, k));
+    const avi = MAC ? new AviChunks((au) => { parser.push(au); parser.end(); }) : null;
     const p = spawn(this.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     this.proc = p;
-    p.stdout.on('data', (d) => parser.push(d));
+    p.stdout.on('data', (d) => (avi ? avi.push(d) : parser.push(d)));
     p.stderr.on('data', (d) => { const s = d.toString().trim(); if (s) console.error('[ffmpeg]', s.slice(0, 300)); });
     p.on('exit', (code) => { if (this.proc === p) { this.proc = null; this.onExit && this.onExit(code); } });
     p.on('error', (e) => { console.error('[ffmpeg] spawn:', e.message); if (this.proc === p) { this.proc = null; this.onExit && this.onExit(-1); } });
@@ -208,4 +235,4 @@ class AudioCapture {
   stop() { if (this.proc) { const p = this.proc; this.proc = null; try { p.kill('SIGKILL'); } catch (e) { /* gone */ } } }
 }
 
-module.exports = { findFfmpeg, probeOutputs, listAvfoundation, FfmpegEncoder, AnnexBParser, listAudioDevices, AudioCapture };
+module.exports = { findFfmpeg, probeOutputs, listAvfoundation, FfmpegEncoder, AnnexBParser, AviChunks, listAudioDevices, AudioCapture };
