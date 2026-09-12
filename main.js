@@ -30,7 +30,7 @@ const APP_PORT = 7801;
 // ---------- settings ----------
 // audioSource: 'auto' (virtual cable such as "CABLE Output" if present, else whole system), 'loopback', or an audio input deviceId
 // codec: 'auto' (H.264 to the native app when WebCodecs can encode it, JPEG otherwise), 'h264', 'jpeg'; bitrate in kbit/s
-const DEFAULTS = { displayId: null, size: '1024x768', fps: 60, quality: 60, autostart: true, autoconnect: true, audio: true, audioSource: 'auto', touch: true, codec: 'auto', bitrate: 6000, manageDisplay: true, manageAudio: true, audioDefault: false, lang: 'auto', autolaunch: true };
+const DEFAULTS = { displayId: null, size: '1024x768', fps: 60, quality: 60, autostart: true, autoconnect: true, audio: true, audioSource: 'auto', touch: true, codec: 'auto', bitrate: 6000, manageDisplay: true, manageAudio: true, audioDefault: false, lang: 'auto', autolaunch: true, macAudioDevice: null };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() { try { settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) }; } catch (e) { /* first run */ } }
@@ -178,8 +178,9 @@ function runMacAudio(args, sync) {
   const say = (out) => console.log('[session] audio', args.join(' ') || '(create)', '->', (out || '').trim());
   if (sync) { // will-quit: the process is going away, so this has to finish before we return
     const r = require('child_process').spawnSync(bin.path, args, { encoding: 'utf8', timeout: 20000 });
-    say((r.stdout || '') + (r.stderr || ''));
-    return Promise.resolve('');
+    const out = (r.stdout || '') + (r.stderr || '');
+    say(out);
+    return Promise.resolve(out.trim());
   }
   return new Promise((resolve) => {
     const p = spawn(bin.path, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -198,7 +199,12 @@ async function sessionStart() {
     sessionOn = true;
     sessionHint('');
     // the virtual monitor is already tied to the vdisplay helper's lifetime, so only the audio devices are session-scoped
-    if (settings.manageAudio) await runMacAudio(settings.audioDefault ? ['--default'] : [], false);
+    // Restore the device the user had selected before the previous session removed it; otherwise just create
+    // them (and select the iPad-only one when "делать его устройством по умолчанию" is on).
+    if (settings.manageAudio) {
+      const keep = settings.macAudioDevice;
+      await runMacAudio(keep ? ['--select', keep] : settings.audioDefault ? ['--default'] : [], false);
+    }
     return;
   }
   sessionOn = true;
@@ -218,7 +224,10 @@ async function sessionStop(sync, why) {
   if (MAC) {
     if (!settings.manageAudio) return;
     stopExternalAudio();            // let go of the cable before the devices around it disappear
-    await runMacAudio(['--remove'], sync); // also puts the output back on the built-in speakers if ours was selected
+    // remember which of our devices was the system output, so the next session brings the same one back
+    const out = await runMacAudio(['--remove'], sync); // also puts the output back on the built-in speakers
+    const m = /was-selected:\s*(.+)/.exec(out || '');
+    saveSettings({ macAudioDevice: m ? m[1].trim() : null });
     return;
   }
   if (settings.audioDefault) await runSession('audio-restore', sync);

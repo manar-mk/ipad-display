@@ -56,7 +56,8 @@ func setDefaultOutput(_ dev: AudioDeviceID) -> Bool {
 func fail(_ m: String) -> Never { print(m); exit(1) }
 
 let args = Array(CommandLine.arguments.dropFirst())
-let cablePrefix = args.first(where: { !$0.hasPrefix("--") }) ?? "BlackHole"
+let selIdx = args.firstIndex(of: "--select")
+let cablePrefix = args.enumerated().first(where: { !$0.element.hasPrefix("--") && $0.offset != (selIdx.map { $0 + 1 } ?? -1) })?.element ?? "BlackHole"
 
 // Enumerate fresh every time: destroying one aggregate invalidates the AudioDeviceIDs handed out before it,
 // so a list captured once goes stale after the first removal and the second device would survive.
@@ -85,6 +86,9 @@ var found = s0.ours
 
 if args.contains("--remove") {
     let before = scan(cablePrefix).ours.count // distinct devices as the user sees them in System Settings
+    // Tell the caller which of our devices the system was pointing at, so the next session can restore it.
+    let sel = scan(cablePrefix).ours.first(where: { $0.value == defaultOutput() })?.key
+    if let sel = sel { print("was-selected: \(sel)") }
     var removed = 0
     for _ in 0..<8 {
         let s = scan(cablePrefix)
@@ -128,13 +132,21 @@ let ipadOnly = ensure(uid: IPAD_UID, name: IPAD_NAME, subs: [c], main: c)
 // The cable is the master clock, not the speakers: a stacked aggregate driven by the built-in output
 // leaves the BlackHole branch silent (sound reaches the Mac speakers and never the iPad), while the
 // virtual device's clock is rock steady and the speakers take drift compensation happily.
-if let s = speakers { _ = ensure(uid: BOTH_UID, name: BOTH_NAME, subs: [c, s], main: c) }
+var bothId: AudioDeviceID = 0
+if let s = speakers { bothId = ensure(uid: BOTH_UID, name: BOTH_NAME, subs: [c, s], main: c) }
 var made: [String] = []
 if !hadIpad { made.append("«\(IPAD_NAME)» — звук только на iPad") }
 if !hadBoth && speakers != nil { made.append("«\(BOTH_NAME)» — на iPad и на Mac сразу") }
 print(made.isEmpty ? "устройства уже есть: «\(IPAD_NAME)», «\(BOTH_NAME)»" : "создано: " + made.joined(separator: "; "))
 
-if args.contains("--default") {
+// --select <uid> restores a specific device (the one the user had chosen before the previous session ended)
+let wanted = args.firstIndex(of: "--select").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+// Use the id ensure() just returned rather than looking the device up again: a device created a moment ago
+// is not always in the next enumeration yet, and the restore would silently do nothing.
+if let w = wanted, (w == BOTH_UID ? bothId : ipadOnly) != 0 {
+    let name = w == BOTH_UID ? BOTH_NAME : IPAD_NAME
+    print(setDefaultOutput(w == BOTH_UID ? bothId : ipadOnly) ? "вывод Mac возвращён на «\(name)»" : "не удалось вернуть вывод на «\(name)»")
+} else if args.contains("--default") {
     if setDefaultOutput(ipadOnly) { print("вывод Mac переключён на «\(IPAD_NAME)» — звук идёт только на iPad") }
     else { print("выберите «\(IPAD_NAME)» в Системные настройки → Звук → Вывод") }
 } else {
