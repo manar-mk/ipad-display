@@ -125,7 +125,10 @@ func ensure(uid: String, name: String, subs: [String], main: String) -> AudioDev
 
 let hadIpad = found[IPAD_UID] != nil, hadBoth = found[BOTH_UID] != nil
 let ipadOnly = ensure(uid: IPAD_UID, name: IPAD_NAME, subs: [c], main: c)
-if let s = speakers { _ = ensure(uid: BOTH_UID, name: BOTH_NAME, subs: [s, c], main: s) }
+// The cable is the master clock, not the speakers: a stacked aggregate driven by the built-in output
+// leaves the BlackHole branch silent (sound reaches the Mac speakers and never the iPad), while the
+// virtual device's clock is rock steady and the speakers take drift compensation happily.
+if let s = speakers { _ = ensure(uid: BOTH_UID, name: BOTH_NAME, subs: [c, s], main: c) }
 var made: [String] = []
 if !hadIpad { made.append("«\(IPAD_NAME)» — звук только на iPad") }
 if !hadBoth && speakers != nil { made.append("«\(BOTH_NAME)» — на iPad и на Mac сразу") }
