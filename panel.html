@@ -251,8 +251,10 @@ function applySettingsToUI() {
   $('#codec').value = settings.codec || 'auto'; $('#bitrate').value = settings.bitrate || 6000;
   for (const k of ['autostart', 'audio', 'touch', 'autoconnect', 'manageDisplay', 'manageAudio', 'audioDefault']) $('#' + k).checked = !!settings[k];
   $('#lang').value = settings.lang || 'auto';
-  const win = settings.platform === 'win32';
-  $('#mdlbl').hidden = !win; $('#malbl').hidden = !win; $('#adlbl').hidden = !win;
+  const win = settings.platform === 'win32', mac = settings.platform === 'darwin';
+  // the virtual monitor is session-scoped only on Windows; on macOS it lives as long as the vdisplay helper does
+  $('#mdlbl').hidden = !win;
+  $('#malbl').hidden = !win && !mac; $('#adlbl').hidden = !win && !mac;
 }
 function readSettingsFromUI() {
   return { size: $('#size').value, fps: Number($('#fps').value) || 15, quality: Number($('#q').value) || 60,

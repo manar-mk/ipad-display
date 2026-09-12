@@ -58,21 +58,45 @@ func fail(_ m: String) -> Never { print(m); exit(1) }
 let args = Array(CommandLine.arguments.dropFirst())
 let cablePrefix = args.first(where: { !$0.hasPrefix("--") }) ?? "BlackHole"
 
-var cable: String? = nil, speakers: String? = nil, speakerId: AudioDeviceID = 0
-var found: [String: AudioDeviceID] = [:]
-for d in allDevices() {
-    guard let n = str(d, kAudioObjectPropertyName), let u = str(d, kAudioDevicePropertyDeviceUID) else { continue }
-    if u == IPAD_UID || u == BOTH_UID { found[u] = d; continue }
-    if n.hasPrefix(cablePrefix) && hasOutput(d) && cable == nil { cable = u }
-    if num(d, kAudioDevicePropertyTransportType) == kAudioDeviceTransportTypeBuiltIn && hasOutput(d) && speakers == nil { speakers = u; speakerId = d }
+// Enumerate fresh every time: destroying one aggregate invalidates the AudioDeviceIDs handed out before it,
+// so a list captured once goes stale after the first removal and the second device would survive.
+struct Scan {
+    var ours: [String: AudioDeviceID] = [:]
+    var cable: String? = nil
+    var speakers: String? = nil
+    var speakerId: AudioDeviceID = 0
+}
+func scan(_ cablePrefix: String) -> Scan {
+    var r = Scan()
+    for d in allDevices() {
+        guard let u = str(d, kAudioDevicePropertyDeviceUID) else { continue } // our aggregates are matched by UID, name may be absent
+        if u == IPAD_UID || u == BOTH_UID { r.ours[u] = d; continue }
+        guard let n = str(d, kAudioObjectPropertyName) else { continue }
+        if n.hasPrefix(cablePrefix) && hasOutput(d) && r.cable == nil { r.cable = u }
+        if num(d, kAudioDevicePropertyTransportType) == kAudioDeviceTransportTypeBuiltIn && hasOutput(d) && r.speakers == nil { r.speakers = u; r.speakerId = d }
+    }
+    return r
 }
 
+var s0 = scan(cablePrefix)
+var cable = s0.cable, speakers = s0.speakers
+let speakerId = s0.speakerId
+var found = s0.ours
+
 if args.contains("--remove") {
-    let wasOurs = found.values.contains(defaultOutput())
+    let before = scan(cablePrefix).ours.count // distinct devices as the user sees them in System Settings
     var removed = 0
-    for (_, d) in found where AudioHardwareDestroyAggregateDevice(d) == noErr { removed += 1 }
-    if wasOurs && speakerId != 0 { _ = setDefaultOutput(speakerId) } // never leave the system pointing at a device that is gone
-    print(removed > 0 ? "удалено устройств: \(removed)" : "нечего удалять")
+    for _ in 0..<8 {
+        let s = scan(cablePrefix)
+        guard let victim = s.ours.first else { break }
+        // hand the system back to the built-in output before the device it points at disappears
+        if s.ours.values.contains(defaultOutput()) && s.speakerId != 0 { _ = setDefaultOutput(s.speakerId) }
+        if AudioHardwareDestroyAggregateDevice(victim.value) == noErr { removed += 1 } else { break }
+    }
+    let left = scan(cablePrefix).ours.count
+    if left > 0 { print("удалено устройств: \(before - left), осталось: \(left)"); exit(1) }
+    _ = removed
+    print(before > 0 ? "удалено устройств: \(before)" : "нечего удалять")
     exit(0)
 }
 
@@ -80,7 +104,9 @@ guard let c = cable else { fail("не найдено устройство «\(ca
 
 // Each device is a stacked aggregate: the cable alone, or the cable together with the built-in speakers.
 func ensure(uid: String, name: String, subs: [String], main: String) -> AudioDeviceID {
-    if let d = found[uid] { return d }
+    // Re-scan right before creating: CoreAudio happily makes a second aggregate with a UID that already
+    // exists, and two invocations close together would otherwise leave duplicates behind.
+    if let d = scan(cablePrefix).ours[uid] { return d }
     let desc: [String: Any] = [
         kAudioAggregateDeviceNameKey as String: name,
         kAudioAggregateDeviceUIDKey as String: uid,

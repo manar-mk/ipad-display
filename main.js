@@ -170,8 +170,37 @@ function runSession(action, sync) {
   });
 }
 function sessionHint(text) { if (win && !win.isDestroyed()) win.webContents.send('session-hint', text); }
+// macOS counterpart of session.ps1's audio-show/audio-hide: the cable devices are aggregates we create
+// ourselves, so they can appear with the session and disappear from System Settings when it ends.
+function runMacAudio(args, sync) {
+  const bin = macHelper('audiosetup');
+  if (!bin.path) { console.error('[session] audiosetup:', bin.error); return Promise.resolve(''); }
+  const say = (out) => console.log('[session] audio', args.join(' ') || '(create)', '->', (out || '').trim());
+  if (sync) { // will-quit: the process is going away, so this has to finish before we return
+    const r = require('child_process').spawnSync(bin.path, args, { encoding: 'utf8', timeout: 20000 });
+    say((r.stdout || '') + (r.stderr || ''));
+    return Promise.resolve('');
+  }
+  return new Promise((resolve) => {
+    const p = spawn(bin.path, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    p.stdout.on('data', (d) => { out += d; });
+    p.stderr.on('data', (d) => { out += d; });
+    p.on('exit', () => { say(out); resolve(out.trim()); });
+    p.on('error', (e) => { console.error('[session] audiosetup:', e.message); resolve(''); });
+    setTimeout(() => { try { p.kill(); } catch (e) { /* gone */ } resolve(''); }, 20000);
+  });
+}
+
 async function sessionStart() {
-  if (!WIN || sessionOn) return;
+  if (sessionOn || (!WIN && !MAC)) return;
+  if (MAC) {
+    sessionOn = true;
+    sessionHint('');
+    // the virtual monitor is already tied to the vdisplay helper's lifetime, so only the audio devices are session-scoped
+    if (settings.manageAudio) await runMacAudio(settings.audioDefault ? ['--default'] : [], false);
+    return;
+  }
   sessionOn = true;
   sessionHint('');
   if (settings.manageDisplay) await runSession('attach');
@@ -183,9 +212,15 @@ async function sessionStart() {
   }
 }
 async function sessionStop(sync, why) {
-  if (!WIN || !sessionOn) return;
+  if (!sessionOn || (!WIN && !MAC)) return;
   console.log('[session] stop (' + (why || '?') + ')');
   sessionOn = false;
+  if (MAC) {
+    if (!settings.manageAudio) return;
+    stopExternalAudio();            // let go of the cable before the devices around it disappear
+    await runMacAudio(['--remove'], sync); // also puts the output back on the built-in speakers if ours was selected
+    return;
+  }
   if (settings.audioDefault) await runSession('audio-restore', sync);
   if (settings.manageAudio) await runSession('audio-hide', sync);
   if (settings.manageDisplay) await runSession('detach', sync);
