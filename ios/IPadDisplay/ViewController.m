@@ -17,6 +17,9 @@ static const int kAudioBuffers = 6;
 @property (nonatomic, strong) UIImageView *screen;
 @property (nonatomic, strong) UILabel *status;
 @property (nonatomic, strong) FrameServer *server;
+// called from the AudioQueue C callbacks below
+- (void)audioBufferFree:(AudioQueueBufferRef)buf fromQueue:(AudioQueueRef)q;
+- (void)fillSilence:(AudioQueueBufferRef)buf;
 @end
 
 @implementation ViewController {
@@ -46,6 +49,7 @@ static const int kAudioBuffers = 6;
     BOOL _waitKey;       // drop deltas until a keyframe arrives
     // keep-alive: a silent stream so iOS keeps the app (and its listening socket) running in the background
     AudioQueueRef _kaQueue;
+    NSMutableData *_kaSilence; // zero-filled once: the SDK we link against has no _memset
 }
 
 - (void)viewDidLoad {
@@ -444,15 +448,22 @@ static void dbg(NSString *fmt, ...) {
 // reach us after a tap on Home or a lock. With UIBackgroundModes=audio the app keeps running as long as
 // it is playing something, so we always play silence: two 0.5 s buffers of zeros, re-queued forever.
 static void AQKeepAliveCallback(void *userData, AudioQueueRef q, AudioQueueBufferRef buf) {
-    memset(buf->mAudioData, 0, buf->mAudioDataBytesCapacity);
-    buf->mAudioDataByteSize = buf->mAudioDataBytesCapacity;
+    ViewController *vc = (__bridge ViewController *)userData;
+    [vc fillSilence:buf];
     AudioQueueEnqueueBuffer(q, buf, 0, NULL);
+}
+
+- (void)fillSilence:(AudioQueueBufferRef)buf {
+    UInt32 n = buf->mAudioDataBytesCapacity;
+    if (_kaSilence.length < n) _kaSilence = [NSMutableData dataWithLength:n]; // dataWithLength: is zero-filled
+    [_kaSilence getBytes:buf->mAudioData length:n];
+    buf->mAudioDataByteSize = n;
 }
 
 - (void)startKeepAlive {
     if (_kaQueue) return;
     AudioStreamBasicDescription f;
-    memset(&f, 0, sizeof(f));
+    f.mReserved = 0;
     f.mSampleRate = 8000;
     f.mFormatID = kAudioFormatLinearPCM;
     f.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
