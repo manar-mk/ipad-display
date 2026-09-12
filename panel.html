@@ -4,52 +4,168 @@
 <meta charset="utf-8">
 <title>iPad Display</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 14px 16px; background: #f4f4f6; color: #1a1a1a; }
-  @media (prefers-color-scheme: dark) { body { background: #1e1e22; color: #e8e8ea; } .card { background: #2a2a30 !important; } input, select { background:#1e1e22; color:#eee; border-color:#444 !important; } .src.sel { outline-color:#5aa0ff !important; } }
-  h1 { font-size: 16px; margin: 0 0 10px; }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; opacity: .65; margin: 0 0 8px; }
-  .card { background: #fff; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-  .sources { display: flex; gap: 8px; flex-wrap: wrap; }
-  .src { border: 0; padding: 4px; border-radius: 8px; background: transparent; outline: 3px solid transparent; cursor: pointer; text-align: center; font: inherit; color: inherit; }
-  .src img { width: 160px; height: 100px; object-fit: cover; border-radius: 5px; display: block; background: #000; }
-  .src.sel { outline-color: #2f6fed; }
-  .row { display: flex; gap: 10px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
-  .row[hidden], .warn[hidden], button[hidden], label[hidden] { display: none; }
-  label { display: inline-flex; align-items: center; gap: 6px; }
-  input[type=number], input[type=text], select { border: 1px solid #ccc; border-radius: 6px; padding: 4px 6px; font: inherit; }
-  input[type=text] { width: 130px; } input[type=number] { width: 70px; }
-  button.primary { background: #2f6fed; color: #fff; border: 0; border-radius: 7px; padding: 7px 16px; font: inherit; font-weight: 600; cursor: pointer; }
-  button.primary.stop { background: #d9534f; }
-  button.secondary { background: transparent; border: 1px solid #999; border-radius: 7px; padding: 5px 12px; font: inherit; cursor: pointer; color: inherit; }
-  .conn { display: flex; gap: 14px; align-items: flex-start; }
-  .conn img { width: 150px; height: 150px; border-radius: 6px; background: #fff; }
+  :root {
+    color-scheme: light dark;
+    --bg: #f1f3f7; --card: #ffffff; --ink: #16181d; --dim: #5b6472; --line: #e3e6ec;
+    --accent: #2f6fed; --accent-ink: #fff; --ok: #1f9d55; --warn: #d9534f; --amber: #b7791f;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11131a; --card: #191c24; --ink: #e8eaf0; --dim: #9aa3b2; --line: #262b36;
+            --accent: #4d86ff; --ok: #3ecf8e; --warn: #ff6b6b; --amber: #e3b341;
+            --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); }
+  }
+  * { box-sizing: border-box; }
+  body { font: 13.5px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
+  svg.i { width: 17px; height: 17px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* top bar */
+  header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+           padding: 12px 18px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  header img.logo { width: 34px; height: 34px; border-radius: 8px; }
+  header .t { font-weight: 650; font-size: 15px; letter-spacing: -.01em; }
+  header .s { color: var(--dim); font-size: 12px; }
+  header .grow { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
+          font-size: 12.5px; font-weight: 600; background: color-mix(in srgb, var(--dim) 14%, transparent); color: var(--dim); white-space: nowrap; }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+  .pill.on { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+  .pill.wait { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); }
+  .pill.bad { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+
+  main { padding: 16px 18px 28px; display: grid; gap: 14px; grid-template-columns: 1fr; max-width: 1100px; }
+  @media (min-width: 900px) { main { grid-template-columns: 1fr 1fr; } .wide { grid-column: 1 / -1; } }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .card > h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; font-weight: 650; letter-spacing: .01em; color: var(--ink); }
+  .card > h2 .n { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px;
+                  background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-size: 11px; font-weight: 700; }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 8px; }
+  .row { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  .row[hidden], .warn[hidden], button[hidden], label[hidden], .card[hidden] { display: none !important; }
+  label { display: inline-flex; align-items: center; gap: 7px; }
+  label.chk { padding: 5px 9px; border-radius: 9px; border: 1px solid transparent; cursor: pointer; }
+  label.chk:hover { border-color: var(--line); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+  input[type=number], input[type=text], select { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font: inherit;
+                                                 background: color-mix(in srgb, var(--card) 50%, var(--bg)); color: var(--ink); }
+  input[type=text] { width: 140px; } input[type=number] { width: 78px; }
+  input[type=range] { accent-color: var(--accent); }
+  button { font: inherit; cursor: pointer; border-radius: 9px; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border: 0; padding: 10px 22px; font-weight: 650; font-size: 14px; }
+  button.primary.stop { background: var(--warn); }
+  button.secondary { background: transparent; border: 1px solid var(--line); color: var(--ink); padding: 6px 12px; }
+  button.secondary:hover { border-color: var(--accent); color: var(--accent); }
+  button.ghost { background: transparent; border: 0; color: var(--dim); padding: 6px 10px; display: inline-flex; align-items: center; gap: 6px; }
+  button.ghost:hover { color: var(--accent); }
+
+  .sources { display: flex; gap: 10px; flex-wrap: wrap; }
+  .src { border: 0; padding: 5px; border-radius: 12px; background: transparent; outline: 2px solid transparent; text-align: center; font: inherit; color: var(--dim); }
+  .src img { width: 168px; height: 105px; object-fit: cover; border-radius: 8px; display: block; background: #000; border: 1px solid var(--line); }
+  .src.sel { outline-color: var(--accent); color: var(--ink); }
+  .src div { margin-top: 5px; font-size: 12px; }
+  .src small { opacity: .65; }
+
+  .stat { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 12.5px; }
+  .ok { color: var(--ok); font-weight: 600; } .warn { color: var(--warn); font-weight: 600; }
+  canvas#preview { width: 100%; max-height: 190px; background: #000; border-radius: 10px; object-fit: contain; border: 1px solid var(--line); }
   code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
-  .url { cursor: pointer; text-decoration: underline; }
-  .stat { font-variant-numeric: tabular-nums; opacity: .8; }
-  .ok { color: #1f9d55; font-weight: 600; } .warn { color: #d9534f; font-weight: 600; }
-  canvas#preview { width: 100%; max-height: 180px; background: #000; border-radius: 6px; object-fit: contain; }
-  small { opacity: .7; }
-  pre.log { max-height: 120px; overflow: auto; font-size: 11px; background: rgba(0,0,0,.06); padding: 6px; border-radius: 6px; white-space: pre-wrap; }
+  .url { cursor: pointer; color: var(--accent); text-decoration: none; border-bottom: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent); }
+  .conn { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .conn img { width: 132px; height: 132px; border-radius: 10px; background: #fff; padding: 6px; }
+  pre.log { max-height: 130px; overflow: auto; font-size: 11px; background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 8px; border-radius: 8px; white-space: pre-wrap; }
+  .warn:not([hidden]) { display: block; color: var(--warn); font-size: 12px; margin-top: 6px; }
+
+  /* help */
+  ol.steps { margin: 0; padding-left: 20px; } ol.steps li { margin: 7px 0; }
+  .kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 1px 6px; font-size: 11.5px; }
+  table.faq { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 12.5px; }
+  table.faq td { border-top: 1px solid var(--line); padding: 7px 8px 7px 0; vertical-align: top; }
+  table.faq td:first-child { color: var(--dim); width: 42%; }
 </style>
 </head>
 <body>
-<h1>iPad Display — хост</h1>
 
-<div class="card">
-  <h2>1. Экран, который идёт на iPad</h2>
+<header>
+  <img class="logo" src="assets/icon.png" alt="">
+  <div>
+    <div class="t">iPad Display</div>
+    <div class="s">второй монитор из старого iPad</div>
+  </div>
+  <div class="grow"></div>
+  <span class="pill" id="pill"><span class="dot"></span><span id="pilltext">запуск…</span></span>
+  <button class="ghost" id="helpbtn" title="Показать инструкцию">
+    <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.2 2.9c-.5.2-.8.7-.8 1.2v.4"/><path d="M12 17h.01"/></svg>
+    Как пользоваться
+  </button>
+</header>
+
+<main>
+
+<section class="card wide" id="help" hidden>
+  <h2><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.2 2.9c-.5.2-.8.7-.8 1.2v.4"/><path d="M12 17h.01"/></svg> Как пользоваться</h2>
+  <ol class="steps">
+    <li><b>На iPad</b> откройте приложение «iPad Display» (синяя иконка с планшетом). Оно покажет экран ожидания с адресом.</li>
+    <li><b>Здесь</b> нажмите <span class="kbd">Старт</span>. Хост включит виртуальный монитор, найдёт iPad в сети сам и начнёт передачу. Кабель USB подключать не обязательно, но с ним задержка меньше и хост переключится на него автоматически.</li>
+    <li><b>Перетащите</b> нужное окно на новый монитор: в Windows он появляется в «Параметры → Система → Дисплей», там же задаётся его расположение относительно основного экрана.</li>
+    <li><b>Звук:</b> в «Микшере громкости» назначьте нужному приложению устройство вывода «CABLE Input» — этот звук пойдёт на iPad. Устройство появляется только пока идёт передача.</li>
+    <li><b>Управление с iPad:</b> один палец — мышь, два пальца — прокрутка, щипок — масштаб, долгое нажатие — правая кнопка. Тап тремя пальцами открывает выбор компьютера, если их несколько.</li>
+    <li><b>Стоп</b> убирает виртуальный монитор и звуковое устройство, окна возвращаются на основной экран.</li>
+  </ol>
+  <table class="faq">
+    <tr><td>iPad не находится</td><td>Оба устройства в одной сети Wi-Fi; приложение на iPad открыто и не свёрнуто; включена галочка «подключаться автоматически».</td></tr>
+    <tr><td>Нет звука на iPad</td><td>Проверьте, что приложению назначен вывод «CABLE Input», громкость iPad не на нуле, и галочка «звук на iPad» включена.</td></tr>
+    <tr><td>Картинка дёргается</td><td>Подключите кабель USB или уменьшите битрейт; по Wi-Fi помогает 5 ГГц.</td></tr>
+    <tr><td>Нет виртуального монитора</td><td>Кнопка «Установить виртуальный монитор» в первом блоке (нужен запрос администратора).</td></tr>
+    <tr><td>Приложение на iPad пропало</td><td>Профиль джейлбрейка слетает после перезагрузки iPad: запустите EverPwnage и нажмите Jailbreak, затем откройте «iPad Display».</td></tr>
+  </table>
+</section>
+
+<section class="card wide">
+  <h2><svg class="i" viewBox="0 0 24 24"><path d="M5 5h14v10H5z"/><path d="M9 19h6"/><path d="M12 15v4"/></svg> Передача</h2>
+  <div class="row">
+    <button class="primary" id="toggle">Старт</button>
+    <span class="stat" id="stat">остановлено</span>
+    <span class="stat" id="vstat"></span>
+  </div>
+  <canvas id="preview" width="320" height="240"></canvas>
+</section>
+
+<section class="card">
+  <h2><span class="n">1</span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/></svg> Экран для iPad</h2>
   <div class="sources" id="sources">загрузка…</div>
   <div class="row" id="vddrow" hidden>
     <button class="secondary" id="vddbtn">Установить виртуальный монитор 1024×768</button>
     <span class="stat" id="vddstat"></span>
   </div>
-  <small id="vddhint">Для режима «второй монитор» нужен виртуальный дисплей: он выбирается автоматически (второй экран 4:3). Если его нет, кнопка выше поставит драйвер (запрос администратора). Выбор основного экрана даёт зеркало.</small>
+  <div class="hint" id="vddhint">Для второго монитора нужен виртуальный дисплей: он выбирается автоматически (второй экран 4:3). Если его нет, поставьте драйвер кнопкой выше. Выбор основного экрана даёт зеркало.</div>
   <div class="warn" id="machint" hidden></div>
   <pre class="log" id="vddlog" hidden></pre>
-</div>
+</section>
 
-<div class="card">
-  <h2>2. Качество и режим</h2>
+<section class="card">
+  <h2><span class="n">2</span><svg class="i" viewBox="0 0 24 24"><path d="M4 17V7a2 2 0 0 1 2-2h9"/><path d="M20 7v10a2 2 0 0 1-2 2H9"/><path d="m16 3 4 4-4 4"/><path d="M8 21l-4-4 4-4"/></svg> Подключение iPad</h2>
+  <div class="row"><span class="stat">Состояние:</span> <span id="tcpstat" class="stat">выкл</span></div>
+  <div class="row"><span class="stat">Найдено в сети:</span> <span id="found" class="stat">пока никого</span> <span class="stat">USB:</span> <span id="usbdevs" class="stat">…</span></div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="autoconnect"> подключаться автоматически</label>
+    <button class="ghost" id="manualbtn">Вручную ▾</button>
+  </div>
+  <div class="warn" id="connhint" hidden></div>
+  <div class="row" id="manualrow" hidden>
+    <select id="tcpmode">
+      <option value="usb">USB (usbmuxd)</option>
+      <option value="tcp">TCP / IP</option>
+    </select>
+    <label id="hostlbl" hidden>Хост <input type="text" id="tcphost" value="127.0.0.1"></label>
+    <label>Порт <input type="number" id="tcpport" value="7801"></label>
+    <button class="secondary" id="tcpbtn">Подключить</button>
+  </div>
+  <div class="hint">Откройте «iPad Display» на iPad: в одной сети хост находит его сам, по кабелю — через usbmuxd (на Windows нужен iTunes с Apple Mobile Device Support).</div>
+</section>
+
+<section class="card">
+  <h2><span class="n">3</span><svg class="i" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 8v8"/><path d="M19 8v8"/><path d="M8.5 5.5v13"/><path d="M15.5 5.5v13"/></svg> Качество</h2>
   <div class="row">
     <label>Размер
       <select id="size">
@@ -60,69 +176,57 @@
       </select>
     </label>
     <label>FPS <input type="number" id="fps" value="60" min="1" max="60"></label>
-    <label>JPEG <input type="range" id="q" min="30" max="95" value="60"> <span id="qv">60</span></label>
   </div>
   <div class="row">
-    <label>Кодек для приложения
+    <label>Кодек
       <select id="codec">
-        <option value="auto">авто (ffmpeg аппаратно → H.264 WebCodecs → JPEG)</option>
+        <option value="auto">авто (аппаратный H.264 → WebCodecs → JPEG)</option>
         <option value="ffmpeg">H.264 аппаратно (ffmpeg + Media Foundation)</option>
         <option value="h264">H.264 программно (WebCodecs)</option>
         <option value="jpeg">JPEG</option>
       </select>
     </label>
     <label>битрейт <input type="number" id="bitrate" value="6000" min="500" max="30000" step="500"> кбит/с</label>
-    <span class="stat" id="vstat"></span>
+    <label>JPEG <input type="range" id="q" min="30" max="95" value="60"> <span id="qv" class="stat">60</span></label>
   </div>
+  <div class="hint">Кодек и битрейт работают для приложения на iPad, JPEG — для Safari и как запасной путь.</div>
+</section>
+
+<section class="card">
+  <h2><span class="n">4</span><svg class="i" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19 6a8 8 0 0 1 0 12"/></svg> Звук и управление</h2>
   <div class="row">
-    <label><input type="checkbox" id="autostart"> запускать захват при старте</label>
-    <label><input type="checkbox" id="audio"> звук на iPad</label>
+    <label class="chk"><input type="checkbox" id="audio"> звук на iPad</label>
     <label>источник <select id="asrc"><option value="loopback">весь системный звук</option></select></label>
     <button class="secondary" id="audiobtn" hidden>Создать устройство «iPad Display + динамики»</button>
-    <span class="stat" id="audiostat"></span>
-    <label><input type="checkbox" id="touch"> касания с iPad как мышь</label>
-    <label id="mdlbl"><input type="checkbox" id="manageDisplay"> включать монитор только на время работы</label>
-    <label id="malbl"><input type="checkbox" id="manageAudio"> убирать звуковое устройство iPad при остановке</label>
-    <label id="adlbl"><input type="checkbox" id="audioDefault"> делать его устройством по умолчанию</label>
-    <span class="warn" id="axhint" hidden></span>
+  </div>
+  <div class="row"><span class="stat" id="audiostat"></span></div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="touch"> касания с iPad как мышь</label>
   </div>
   <div class="row">
-    <button class="primary" id="toggle">Старт</button>
-    <span class="stat" id="stat">остановлено</span>
+    <label class="chk" id="mdlbl"><input type="checkbox" id="manageDisplay"> монитор только на время работы</label>
+    <label class="chk" id="malbl"><input type="checkbox" id="manageAudio"> убирать звуковое устройство при остановке</label>
+    <label class="chk" id="adlbl"><input type="checkbox" id="audioDefault"> делать его устройством по умолчанию</label>
   </div>
-  <canvas id="preview" width="320" height="240"></canvas>
-</div>
-
-<div class="card">
-  <h2>3. Приложение на iPad (Wi-Fi автоматически, USB запасной)</h2>
-  <div class="row"><span>Состояние: <span id="tcpstat" class="stat">выкл</span></span></div>
-  <div class="row"><span>Найдено в сети: <span id="found" class="stat">пока никого</span></span> <span>USB: <span id="usbdevs" class="stat">…</span></span></div>
   <div class="row">
-    <label><input type="checkbox" id="autoconnect"> подключаться автоматически</label>
-    <label>Вручную
-      <select id="tcpmode">
-        <option value="usb">USB (usbmuxd)</option>
-        <option value="tcp">TCP / IP</option>
-      </select>
-    </label>
-    <label id="hostlbl" hidden>Хост <input type="text" id="tcphost" value="127.0.0.1"></label>
-    <label>Порт <input type="number" id="tcpport" value="7801"></label>
-    <button class="secondary" id="tcpbtn">Подключить</button>
+    <label class="chk"><input type="checkbox" id="autostart"> запускать передачу сразу при запуске</label>
   </div>
-  <small>Откройте «iPad Display» на iPad: в одной Wi-Fi сети хост находит его сам по UDP-маячку; по кабелю через usbmuxd (на Windows нужен iTunes с Apple Mobile Device Support).</small>
-</div>
+  <span class="warn" id="axhint" hidden></span>
+</section>
 
-<div class="card">
-  <h2>4. Без приложения: Safari на iPad</h2>
+<section class="card">
+  <h2><span class="n">5</span><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><path d="M12 19.5h.01"/></svg> Без приложения: Safari на iPad</h2>
   <div class="conn">
     <img id="qr" alt="QR">
     <div>
       <div id="urls">…</div>
-      <div style="margin-top:6px">Подключено браузеров: <span id="wsclients" class="stat">0</span></div>
-      <small>Поделиться → «На экран Домой» даёт полноэкранный режим. Звук в Safari включается тапом по экрану iPad.</small>
+      <div class="row"><span class="stat">Подключено браузеров:</span> <span id="wsclients" class="stat">0</span></div>
+      <div class="hint">Отсканируйте код на iPad. «Поделиться → На экран Домой» даёт полноэкранный режим, звук включается тапом по экрану.</div>
     </div>
   </div>
-</div>
+</section>
+
+</main>
 
 <script>
 const $ = (s) => document.querySelector(s);
@@ -352,7 +456,7 @@ async function start() {
   video.srcObject = new MediaStream(stream.getVideoTracks()); await video.play();
   await h264Available();
   running = true; prevSmall = null; frames = 0; bytes = 0; statT = Date.now();
-  $('#toggle').textContent = 'Стоп'; $('#toggle').classList.add('stop');
+  $('#toggle').textContent = 'Стоп'; $('#toggle').classList.add('stop'); refreshPill();
   startAudio(stream);
   schedule();
 }
@@ -367,7 +471,7 @@ function schedule() {
 function stop(keepSession) {
   running = false; clearInterval(timer); clearInterval(encTimer); stopAudio(); stopEncoder();
   if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
-  $('#toggle').textContent = 'Старт'; $('#toggle').classList.remove('stop'); $('#stat').textContent = 'остановлено';
+  $('#toggle').textContent = 'Старт'; $('#toggle').classList.remove('stop'); $('#stat').textContent = 'остановлено'; refreshPill();
   host.log('panel stop(keep=' + !!keepSession + ') from ' + ((new Error()).stack || '').split('\n').slice(1, 3).join(' <- ').replace(/\s+/g, ' '));
   if (!keepSession) host.sessionStop(); // put the virtual monitor and the sound device back
 }
@@ -402,13 +506,34 @@ function tick() {
   }, 'image/jpeg', Number($('#q').value) / 100);
 }
 
+// ---------- header: help, manual connect, status pill ----------
+let lastStatus = null;
+$('#helpbtn').onclick = () => { const h = $('#help'); h.hidden = !h.hidden; if (!h.hidden) h.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+$('#manualbtn').onclick = () => { const r = $('#manualrow'); r.hidden = !r.hidden; $('#manualbtn').textContent = r.hidden ? 'Вручную ▾' : 'Вручную ▴'; };
+function refreshPill() {
+  const s = lastStatus, p = $('#pill');
+  const found = !!(s && s.discovered.length), conn = !!(s && s.tcp.state === 'connected');
+  let cls = '', txt = 'iPad не найден';
+  if (conn && running) { cls = 'on'; txt = 'iPad подключён' + (s.tcp.mode === 'usb' ? ' по USB' : ' по Wi-Fi'); }
+  else if (conn) { cls = 'wait'; txt = 'подключён, передача остановлена'; }
+  else if (s && s.tcp.state === 'declined') { cls = 'bad'; txt = 'iPad показывает другой компьютер'; }
+  else if (found) { cls = 'wait'; txt = running ? 'iPad найден, подключение…' : 'iPad найден, нажмите «Старт»'; }
+  else if (running) { cls = 'wait'; txt = 'передача идёт, iPad не найден'; }
+  p.className = 'pill ' + cls; $('#pilltext').textContent = txt;
+  // the most common reason for "nothing happens": the auto-connect checkbox is off
+  const off = found && !$('#autoconnect').checked && !conn;
+  $('#connhint').hidden = !off;
+  if (off) $('#connhint').textContent = 'iPad виден в сети, но автоподключение выключено — включите галочку выше или подключитесь вручную.';
+}
+
 // ---------- UI events ----------
 $('#toggle').onclick = () => running ? stop() : start();
 $('#fps').onchange = () => { persist(); if (running) schedule(); };
 $('#q').oninput = () => { $('#qv').textContent = $('#q').value; };
 $('#q').onchange = persist;
 $('#size').onchange = () => { prevSmall = null; persist(); };
-for (const k of ['autostart', 'touch', 'autoconnect', 'manageDisplay', 'manageAudio', 'audioDefault']) $('#' + k).onchange = persist;
+for (const k of ['autostart', 'touch', 'manageDisplay', 'manageAudio', 'audioDefault']) $('#' + k).onchange = persist;
+$('#autoconnect').onchange = () => { persist(); refreshPill(); };
 $('#audio').onchange = async () => { await persist(); if (running) restart(); };
 $('#codec').onchange = async () => { await persist(); stopEncoder(); };
 $('#bitrate').onchange = async () => { await persist(); stopEncoder(); };
@@ -441,7 +566,7 @@ async function refreshUsb() {
   el.textContent = r.devices.length ? r.devices.map(d => d.serial.slice(0, 8) + '…').join(', ') : 'нет устройств';
 }
 host.onStatus((s) => {
-  appConnected = s.tcp.state === 'connected'; wsCount = s.ws.length;
+  appConnected = s.tcp.state === 'connected'; wsCount = s.ws.length; lastStatus = s; refreshPill();
   if (!appConnected) stopEncoder();
   $('#wsclients').textContent = s.ws.length + (s.ws.length ? ' (' + s.ws.map(ip => ip.replace('::ffff:', '')).join(', ') + ')' : '');
   const map = { off: 'выкл', connecting: 'подключение…', connected: 'подключено', retrying: 'нет соединения, повтор…', declined: 'отклонено' };
