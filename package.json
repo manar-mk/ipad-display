@@ -1,6 +1,6 @@
 {
   "name": "ipad-display",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Use an old iPad as a second monitor for Windows and macOS: hardware H.264, sound, touch and gestures",
   "main": "main.js",
   "scripts": {
