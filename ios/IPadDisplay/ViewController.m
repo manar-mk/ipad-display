@@ -586,6 +586,13 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
         SInt16 v = (SInt16)(12000.0 * sin(2.0 * M_PI * 440.0 * (double)i / (double)_rate));
         for (int ch = 0; ch < _channels; ch++) out[i * _channels + ch] = v;
     }
+    // Two independent probes, because "the app renders nothing" and "the device makes no sound" look identical
+    // from the host: the tone goes through our AudioQueue, the system sound bypasses it entirely.
+    AVAudioSession *sess = [AVAudioSession sharedInstance];
+    dbg(@"self test: category=%@ volume=%.2f route=%@ keepAlive=%p mainQueue=%p",
+        sess.category, sess.outputVolume, sess.currentRoute.outputs.firstObject.portType, _kaQueue, _queue);
+    AudioServicesPlaySystemSound(1007);
+    dbg(@"self test: system sound 1007 fired (bypasses our AudioQueue)");
     dbg(@"self test: playing 1 s of 440 Hz (%lu bytes) through the host audio queue", (unsigned long)tone.length);
     [_pending appendData:tone];
     [self pumpAudio];
