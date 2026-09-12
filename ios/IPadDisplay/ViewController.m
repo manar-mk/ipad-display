@@ -102,9 +102,13 @@ static const int kAudioBuffers = 6;
     [UIApplication sharedApplication].idleTimerDisabled = YES;
 
     // Playback category: sound keeps playing with the mute switch on and mixes with nothing else.
-    NSError *sessErr = nil;
-    [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:&sessErr];
-    [[AVAudioSession sharedInstance] setActive:YES error:&sessErr];
+    // Done off the main thread on purpose — see startKeepAlive.
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *sessErr = nil;
+        [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:&sessErr];
+        [[AVAudioSession sharedInstance] setActive:YES error:&sessErr];
+        [self startKeepAlive];
+    });
 
     _pending = [NSMutableData data];
     _freeBuffers = [NSMutableArray array];
@@ -131,8 +135,6 @@ static const int kAudioBuffers = 6;
         return;
     }
     [self showWaiting];
-
-    [self startKeepAlive];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(showWaiting)
                                                  name:UIApplicationDidBecomeActiveNotification object:nil];
@@ -447,6 +449,8 @@ static void dbg(NSString *fmt, ...) {
 // iOS suspends a backgrounded app within seconds and closes its sockets, so the host could no longer
 // reach us after a tap on Home or a lock. With UIBackgroundModes=audio the app keeps running as long as
 // it is playing something, so we always play silence: two 0.5 s buffers of zeros, re-queued forever.
+// Called from a background queue: every AudioQueue call here goes to mediaserverd, and a wedged
+// mediaserverd would otherwise freeze the launch.
 static void AQKeepAliveCallback(void *userData, AudioQueueRef q, AudioQueueBufferRef buf) {
     ViewController *vc = (__bridge ViewController *)userData;
     [vc fillSilence:buf];
@@ -495,11 +499,14 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
         if (_queue && _rate == sampleRate && _channels == channels) return;
         [self stopAudio];
         _rate = sampleRate; _channels = channels ? channels : 1;
-        AVAudioSession *sess = [AVAudioSession sharedInstance];
-        NSError *se = nil;
-        BOOL okCat = [sess setCategory:AVAudioSessionCategoryPlayback error:&se];
-        BOOL okAct = [sess setActive:YES error:&se];
-        dbg(@"session category=%d active=%d err=%@ volume=%.2f route=%@", okCat, okAct, se.localizedDescription, sess.outputVolume, sess.currentRoute.outputs.firstObject.portType);
+        // off the main thread: these are synchronous calls into mediaserverd (see startKeepAlive)
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            AVAudioSession *sess = [AVAudioSession sharedInstance];
+            NSError *se = nil;
+            BOOL okCat = [sess setCategory:AVAudioSessionCategoryPlayback error:&se];
+            BOOL okAct = [sess setActive:YES error:&se];
+            dbg(@"session category=%d active=%d err=%@ volume=%.2f route=%@", okCat, okAct, se.localizedDescription, sess.outputVolume, sess.currentRoute.outputs.firstObject.portType);
+        });
         AudioStreamBasicDescription f;
         memset(&f, 0, sizeof(f));
         f.mSampleRate = sampleRate;
