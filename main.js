@@ -118,7 +118,18 @@ async function startExternal() {
   let idx;
   try { idx = await externalOutputIdx(); } finally { ext.starting = false; }
   if (ext.active || tcp.state !== 'connected') return; // disconnected (or restarted) while probing
-  if (idx === null) { console.error('[ffmpeg] no capture output matches the captured display; falling back to WebCodecs'); ext.path = null; return; }
+  if (idx === null) {
+    // The capture index moves when the virtual display is (re)created, and the probe result may predate it.
+    // Never disable ffmpeg for good here: the cable audio needs it too, and losing it silently for the rest
+    // of the session is what made sound come and go. Drop the stale probe and try again shortly.
+    ext.outputs = null;
+    ext.missed = (ext.missed || 0) + 1;
+    console.error('[ffmpeg] no capture output matches the captured display (attempt ' + ext.missed + ') - WebCodecs meanwhile, re-probing');
+    if (ext.missed < 5) setTimeout(startExternal, 4000);
+    else console.error('[ffmpeg] giving up on the hardware encoder for this connection; audio capture keeps running');
+    return;
+  }
+  ext.missed = 0;
   if (!ext.enc) ext.enc = new ffenc.FfmpegEncoder(ext.path);
   ext.active = true; ext.lastStart = Date.now();
   ext.enc.onConfig = (avcC) => onVideoConfig(avcC);
