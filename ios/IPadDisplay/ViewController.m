@@ -136,6 +136,10 @@ static const int kAudioBuffers = 6;
     }
     [self showWaiting];
 
+    // mediaserverd can be restarted under us; every AudioQueue made before that keeps reporting itself as
+    // running, with its sample clock advancing, while rendering into nothing. Rebuild everything when iOS says so.
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(mediaServicesReset)
+                                                 name:AVAudioSessionMediaServicesWereResetNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(showWaiting)
                                                  name:UIApplicationDidBecomeActiveNotification object:nil];
 }
@@ -459,7 +463,14 @@ static void AQKeepAliveCallback(void *userData, AudioQueueRef q, AudioQueueBuffe
 
 - (void)fillSilence:(AudioQueueBufferRef)buf {
     UInt32 n = buf->mAudioDataBytesCapacity;
-    if (_kaSilence.length < n) _kaSilence = [NSMutableData dataWithLength:n]; // dataWithLength: is zero-filled
+    if (_kaSilence.length < n) {
+        // Not digital zero: a +-1 LSB dither, about -90 dBFS and inaudible, but a real signal. Feeding the
+        // output pure silence for minutes lets the speaker amplifier idle, and the audio that arrives
+        // afterwards stays inaudible until something else (a system sound) wakes the hardware again.
+        _kaSilence = [NSMutableData dataWithLength:n];
+        SInt16 *p = (SInt16 *)_kaSilence.mutableBytes;
+        for (NSUInteger i = 0; i < n / 2; i++) p[i] = (i & 1) ? 1 : -1;
+    }
     [_kaSilence getBytes:buf->mAudioData length:n];
     buf->mAudioDataByteSize = n;
 }
@@ -478,7 +489,9 @@ static void AQKeepAliveCallback(void *userData, AudioQueueRef q, AudioQueueBuffe
     f.mBytesPerPacket = 2;
     OSStatus ns = AudioQueueNewOutput(&f, AQKeepAliveCallback, (__bridge void *)self, NULL, NULL, 0, &_kaQueue);
     if (ns != noErr) { dbg(@"keep-alive queue failed %d", (int)ns); _kaQueue = NULL; return; }
-    AudioQueueSetParameter(_kaQueue, kAudioQueueParam_Volume, 0.0);
+    // Volume 1.0, not 0.0: the buffers are already zero-filled, so this is just as silent, and a second
+    // queue sitting at volume zero was silencing the queue that carries the host audio on iOS 9.
+    AudioQueueSetParameter(_kaQueue, kAudioQueueParam_Volume, 1.0);
     for (int i = 0; i < 2; i++) {
         AudioQueueBufferRef b = NULL;
         if (AudioQueueAllocateBuffer(_kaQueue, 8000, &b) != noErr) continue;
@@ -608,6 +621,22 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
     OSStatus rs = AudioQueueGetProperty(_queue, kAudioQueueProperty_IsRunning, &running, &sz);
     dbg(@"queue clock: getTime=%d sampleTime=%.0f isRunning=%u (rs=%d); it must grow by ~%u every second",
         (int)st, ts.mSampleTime, (unsigned)running, (int)rs, (unsigned)_rate);
+}
+
+- (void)mediaServicesReset {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        dbg(@"media services were reset - rebuilding both audio queues");
+        uint32_t r = _rate; uint8_t ch = _channels;
+        [self stopAudio];
+        if (_kaQueue) { AudioQueueStop(_kaQueue, true); AudioQueueDispose(_kaQueue, true); _kaQueue = NULL; }
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSError *e = nil;
+            [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:&e];
+            [[AVAudioSession sharedInstance] setActive:YES error:&e];
+            [self startKeepAlive];
+            if (r) dispatch_async(dispatch_get_main_queue(), ^{ [self frameServerDidReceiveAudioFormat:r channels:ch]; });
+        });
+    });
 }
 
 - (void)stopAudio {
