@@ -25,7 +25,12 @@ function launchOverUsb({ minInterval = 60000, password = process.env.IPAD_SSH_PA
         if (err) return bail(err);
         let out = '';
         stream.on('data', (d) => { out += d; });
-        stream.on('close', () => { c.end(); done(!/no-sblaunch/.test(out), 'iPad app: ' + out.trim()); });
+        stream.on('close', () => {
+          c.end();
+          // SBSLaunchApplicationWithIdentifier fails with a timeout while the screen is locked
+          const locked = /timeout|locked/i.test(out);
+          done(/no-sblaunch/.test(out) ? false : (locked ? 'locked' : true), 'iPad app: ' + out.trim());
+        });
       });
     });
     c.connect({ sock, username: 'root', password, readyTimeout: 8000,

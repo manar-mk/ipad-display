@@ -530,10 +530,12 @@ function refreshPill() {
   else if (found) { cls = 'wait'; txt = t(running ? 'pill.foundConnecting' : 'pill.foundIdle'); }
   else if (running) { cls = 'wait'; txt = t('pill.runningNotFound'); }
   p.className = 'pill ' + cls; $('#pilltext').textContent = txt;
-  // the most common reason for "nothing happens": the auto-connect checkbox is off
+  // the two usual reasons for "nothing happens": auto-connect is off, or the iPad is locked
   const off = found && !$('#autoconnect').checked && !conn;
-  $('#connhint').hidden = !off;
+  const locked = !conn && s && s.tcp.hint === 'locked';
+  $('#connhint').hidden = !(off || locked);
   if (off) $('#connhint').textContent = t('conn.autoOff');
+  else if (locked) $('#connhint').textContent = t('conn.locked');
 }
 
 // ---------- UI events ----------

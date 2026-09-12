@@ -428,7 +428,7 @@ async function tcpTry() {
   if (!tcp.want) { s.destroy(); return; }
   tcp.socket = s; tcp.rx = Buffer.alloc(0);
   s.setNoDelay(true);
-  tcp.state = 'connected'; tcp.inflight = false; tcp.sentSeq = 0;
+  tcp.state = 'connected'; tcp.inflight = false; tcp.sentSeq = 0; tcp.hint = null;
   notifyStatus();
   s.write(frameMsg('N', Buffer.from(os.hostname(), 'utf8'))); // who we are, for the host picker on the iPad
   if (audioFormat) s.write(audioFormatMsg());
@@ -500,7 +500,11 @@ function startDiscovery() {
     setTimeout(() => {
       if (tcp.mode === 'usb' && tcp.state !== 'connected') {
         usbFailedAt = Date.now(); tcpDisconnect();
-        if (settings.autolaunch) applaunch.launchOverUsb().then((ok) => { if (ok) usbFailedAt = 0; });
+        if (settings.autolaunch) applaunch.launchOverUsb().then((r) => {
+          if (r === true) { usbFailedAt = 0; tcp.hint = null; }
+          else if (r === 'locked') tcp.hint = 'locked';
+          notifyStatus();
+        });
       }
     }, 6000);
   }, 5000);
@@ -567,7 +571,7 @@ function notifyStatus() {
   if (!win || win.isDestroyed()) return;
   win.webContents.send('status', {
     ws: [...wsClients.values()].map((s) => s.ip),
-    tcp: { state: tcp.state, mode: tcp.mode, host: tcp.host, port: tcp.port, error: tcp.error },
+    tcp: { state: tcp.state, mode: tcp.mode, host: tcp.host, port: tcp.port, error: tcp.error, hint: tcp.hint || null },
     discovered: [...discovered].map(([ip, d]) => ({ ip, busy: !!d.busy })),
     mac: MAC ? { axTrusted: mac.axTrusted, mouseError: mac.mouseError, vdisplay: mac.vdisplayId, vdisplayError: mac.vdisplayError, screenAccess: systemPreferences.getMediaAccessStatus('screen') } : null,
   });
