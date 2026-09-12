@@ -170,7 +170,7 @@ brew install blackhole-2ch    # виртуальное аудиоустройс�
 | Нет виртуального монитора | Кнопка установки в первом блоке панели; на macOS — сообщение об ошибке CGVirtualDisplay, запасной путь DeskPad |
 | Приложение пропало с iPad | После перезагрузки iPad джейлбрейк не активен: запустите EverPwnage → Jailbreak, затем «iPad Display» |
 | iPad показывает другой компьютер | На iPad тап тремя пальцами → выберите нужный хост или «Любой хост» |
-| Звук есть на компьютере, но не на iPad | Смотрите в журнале панели строку `audio: … peak=A/B` — см. «Почему нет звука» ниже |
+| Звук есть на компьютере, но не на iPad | Разберите тракт по участкам — см. «Почему нет звука» ниже |
 | Запущено несколько копий хоста | Порт 7800 занимает первая, остальные молча не обслуживают iPad. Проверка: `lsof -i :7800` (Windows: `netstat -ano \| findstr 7800`) |
 | iPad принимает звук, но молчит | Самопроверка на устройстве, см. «Почему нет звука» ниже |
 | Чёрный экран на iPad | Виртуальный монитор пуст — перетащите на него окно. Признак: 60 fps при ~0.1 Мбит/с |
@@ -183,7 +183,7 @@ node tools/usbmux-list.js                       # usbmuxd и туннель к i
 node tools/list-apps.js Any                     # какие приложения стоят на iPad
 node tools/ssh.js "cat /tmp/ipaddisplay.log"    # журнал звука приложения (Wi-Fi: IPAD_SSH_HOST=<ip>)
 node tools/test-client.js ws://127.0.0.1:7800/ 3 # кадры по WebSocket + тестовое касание
-node tools/ssh.js "touch /tmp/ipaddisplay.selftest"  # iPad проиграет свой тон 440 Гц (снять: rm -f)
+node tools/ssh.js "touch /tmp/ipaddisplay.selftest"  # тон 440 Гц на iPad; звучит, только пока хост шлёт звук (снять: rm -f)
 node tools/ssh.js "killall mediaserverd"             # перезапуск звукового демона iPad
 ```
 
