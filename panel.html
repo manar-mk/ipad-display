@@ -433,6 +433,8 @@ setInterval(async () => {
     : enc ? ('H.264 ' + encW + '×' + encH + ' · ' + (vFrames / dt).toFixed(0) + ' fps · ' + (vBytes * 8 / dt / 1e6).toFixed(1) + ' Мбит/с' + (s.dropped ? ' · пропущено ' + s.dropped : '') + ' · ' + encCfgName + lat)
     : (s.encoder === 'ffmpeg' ? 'H.264 аппаратно: ждёт подключения приложения' : useH264() ? 'H.264: ждёт подключения приложения' : 'JPEG');
   $('#vstat').textContent = line;
+  // with the external encoder no JPEG frames flow, so #stat would keep the 'preparing' text
+  if (running && extEnc) $('#stat').textContent = 'захват ' + (video.videoWidth || '?') + '×' + (video.videoHeight || '?') + (audioNode ? ' · звук: ' + audioLabel : '');
   if ((enc || extEnc) && (Date.now() / 1000 | 0) % 5 === 0) host.log('video: ' + line);
   if ((Date.now() / 1000 | 0) % 5 === 0) host.log('audio: chunks=' + aChunks + ' ctx=' + (audioCtx ? audioCtx.state : '-') + ' track=' + (audioTrack ? audioTrack.readyState + (audioTrack.muted ? '/muted' : '') : '-') + ' label=' + audioLabel + ' toApp sent=' + s.audioSent + ' dropped=' + s.audioDropped);
   vFrames = 0; vBytes = 0;
