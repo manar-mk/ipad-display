@@ -512,7 +512,7 @@ function tick() {
     frames++; bytes += ab.byteLength;
     pctx.drawImage(work, 0, 0, preview.width, preview.height);
     const dt = (Date.now() - statT) / 1000;
-    if (dt >= 1) { $('#stat').textContent = w + '×' + h + ' · ' + (frames / dt).toFixed(1) + ' fps · ' + (bytes / dt / 1024 / 128).toFixed(2) + ' Мбит/с' + (audioNode ? t('stat.sound', { src: audioLabel }) : ''); frames = 0; bytes = 0; statT = Date.now(); }
+    if (dt >= 1) { $('#stat').textContent = t('stat.live', { w, h, fps: (frames / dt).toFixed(1), mbps: (bytes / dt / 1024 / 128).toFixed(2) }) + (audioNode ? t('stat.sound', { src: audioLabel }) : ''); frames = 0; bytes = 0; statT = Date.now(); }
   }, 'image/jpeg', Number($('#q').value) / 100);
 }
 

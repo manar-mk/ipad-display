@@ -36,6 +36,7 @@
     'stat.captureError': 'ошибка захвата: {e}',
     'stat.capture': 'захват {w}×{h}',
     'stat.sound': ' · звук: {src}',
+    'stat.live': '{w}×{h} · {fps} fps · {mbps} Мбит/с',
     'audio.cable': 'кабель', 'audio.system': 'система',
 
     'card.screen': 'Экран для iPad',
@@ -143,6 +144,7 @@
     'stat.captureError': 'capture error: {e}',
     'stat.capture': 'capturing {w}×{h}',
     'stat.sound': ' · sound: {src}',
+    'stat.live': '{w}×{h} · {fps} fps · {mbps} Mbit/s',
     'audio.cable': 'cable', 'audio.system': 'system',
 
     'card.screen': 'Screen sent to the iPad',
