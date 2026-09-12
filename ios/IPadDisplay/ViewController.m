@@ -18,6 +18,7 @@ static const int kAudioBuffers = 6;
     NSMutableDictionary *_hosts;
     NSString *_peerIp;
     UIButton *_hostBtn;
+    UIImageView *_logo;
     // touch state: one finger drives the mouse, two fingers scroll / pinch
     BOOL _multi, _mouseDown;
     UITouch *_mouseTouch;
@@ -67,6 +68,15 @@ static const int kAudioBuffers = 6;
     _videoLayer.hidden = YES;
     [self.view.layer addSublayer:_videoLayer];
     _waitKey = YES;
+
+    // waiting screen: the app icon above the status text
+    _logo = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"Icon-152"]];
+    _logo.frame = CGRectMake(0, 0, 104, 104);
+    _logo.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds) - 120);
+    _logo.layer.cornerRadius = 23; _logo.layer.masksToBounds = YES;
+    _logo.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin
+                           | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+    [self.view addSubview:_logo];
 
     self.status = [[UILabel alloc] initWithFrame:CGRectInset(self.view.bounds, 30, 30)];
     self.status.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -118,7 +128,7 @@ static const int kAudioBuffers = 6;
     if (self.screen.image) return;
     NSString *ip = [FrameServer wifiAddress] ?: @"нет Wi-Fi";
     NSString *pref = self.server.preferredHost;
-    self.status.hidden = NO;
+    self.status.hidden = NO; _logo.hidden = NO;
     self.status.text = [NSString stringWithFormat:
         @"iPad Display\n\nОжидание компьютера…\n\n"
         @"Wi-Fi: iPad виден хосту автоматически (адрес %@, порт %d).\n"
@@ -303,7 +313,7 @@ static const int kAudioBuffers = 6;
         if (decoded) {
             if (_videoActive) [self stopVideo];
             self.screen.image = decoded;
-            self.status.hidden = YES;
+            self.status.hidden = YES; _logo.hidden = YES;
             _hostBtn.hidden = YES;
         }
         // Ack after the frame is committed for display.
@@ -373,7 +383,7 @@ static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); 
     }
     if (!_videoActive) {
         _videoActive = YES;
-        dispatch_async(dispatch_get_main_queue(), ^{ _videoLayer.hidden = NO; self.screen.hidden = YES; self.status.hidden = YES; _hostBtn.hidden = YES; });
+        dispatch_async(dispatch_get_main_queue(), ^{ _videoLayer.hidden = NO; self.screen.hidden = YES; self.status.hidden = YES; _logo.hidden = YES; _hostBtn.hidden = YES; });
     }
     [_videoLayer enqueueSampleBuffer:sample];
     CFRelease(sample);
