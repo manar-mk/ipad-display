@@ -536,6 +536,7 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
         static unsigned chunks = 0;
         chunks++;
         if (chunks == 1 || chunks % 200 == 0) dbg(@"audio chunk #%u (%lu bytes) queue=%p pending=%lu free=%lu started=%d", chunks, (unsigned long)pcm.length, _queue, (unsigned long)_pending.length, (unsigned long)_freeBuffers.count, _audioStarted);
+        if (chunks % 20 == 0) [self maybeSelfTest];
         if (!_queue) return;
         [_pending appendData:pcm];
         [self pumpAudio];
@@ -566,6 +567,40 @@ static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRe
         if (es != noErr) { dbg(@"AudioQueueEnqueueBuffer failed %d (buffer dropped)", (int)es); continue; } // never put a rejected buffer back
         if (!_audioStarted && _freeBuffers.count <= kAudioBuffers - 3) { OSStatus ss = AudioQueueStart(_queue, NULL); _audioStarted = YES; dbg(@"AudioQueueStart -> %d", (int)ss); }
     }
+}
+
+// ---- self test -----------------------------------------------------------
+// Is the device still able to make a sound at all? `touch /tmp/ipaddisplay.selftest` over SSH and the app
+// plays one second of 440 Hz through the very same queue the host audio uses, then reports the queue clock:
+// a wedged mediaserverd accepts and returns buffers happily while never advancing it, so the sample time
+// standing still is the proof that nothing is being rendered.
+- (void)maybeSelfTest {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:@"/tmp/ipaddisplay.selftest"]) return;
+    [fm removeItemAtPath:@"/tmp/ipaddisplay.selftest" error:nil];
+    if (!_queue) { dbg(@"self test: no audio queue yet"); return; }
+    NSUInteger frames = _rate; // one second
+    NSMutableData *tone = [NSMutableData dataWithLength:frames * 2 * _channels];
+    SInt16 *out = (SInt16 *)tone.mutableBytes;
+    for (NSUInteger i = 0; i < frames; i++) {
+        SInt16 v = (SInt16)(12000.0 * sin(2.0 * M_PI * 440.0 * (double)i / (double)_rate));
+        for (int ch = 0; ch < _channels; ch++) out[i * _channels + ch] = v;
+    }
+    dbg(@"self test: playing 1 s of 440 Hz (%lu bytes) through the host audio queue", (unsigned long)tone.length);
+    [_pending appendData:tone];
+    [self pumpAudio];
+    [self performSelector:@selector(reportQueueClock) withObject:nil afterDelay:2.0];
+}
+
+- (void)reportQueueClock {
+    if (!_queue) return;
+    AudioTimeStamp ts;
+    ts.mSampleTime = -1;
+    OSStatus st = AudioQueueGetCurrentTime(_queue, NULL, &ts, NULL);
+    UInt32 running = 0, sz = sizeof(running);
+    OSStatus rs = AudioQueueGetProperty(_queue, kAudioQueueProperty_IsRunning, &running, &sz);
+    dbg(@"queue clock: getTime=%d sampleTime=%.0f isRunning=%u (rs=%d); it must grow by ~%u every second",
+        (int)st, ts.mSampleTime, (unsigned)running, (int)rs, (unsigned)_rate);
 }
 
 - (void)stopAudio {
