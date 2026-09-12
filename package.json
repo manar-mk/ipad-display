@@ -1,11 +1,14 @@
 {
   "name": "ipad-display",
   "version": "0.1.0",
-  "description": "Use an old iPad (iOS 9+) as a second monitor for macOS / Windows over Wi-Fi or USB",
+  "description": "Use an old iPad as a second monitor for Windows and macOS: hardware H.264, sound, touch and gestures",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test-client": "node tools/test-client.js"
+    "test-client": "node tools/test-client.js",
+    "setup": "node tools/setup.js",
+    "icons": "node tools/make-icons.js",
+    "shortcut": "node tools/make-shortcut.js"
   },
   "license": "MIT",
   "dependencies": {

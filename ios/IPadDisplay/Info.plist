@@ -39,6 +39,11 @@
 		<string>Icon-120</string>
 		<string>Icon-167</string>
 	</array>
+	<!-- keeps the app alive (and its sockets open) while it plays the computer's sound in the background -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIRequiresFullScreen</key>

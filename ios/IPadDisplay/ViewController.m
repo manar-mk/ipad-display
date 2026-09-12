@@ -4,6 +4,12 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 
+// UI language: Russian when the iPad is set to Russian, English otherwise.
+static NSString *L(NSString *ru, NSString *en) {
+    NSString *lang = [[NSLocale preferredLanguages] firstObject] ?: @"en";
+    return [lang hasPrefix:@"ru"] ? ru : en;
+}
+
 static const uint16_t kPort = 7801;
 static const int kAudioBuffers = 6;
 
@@ -38,6 +44,8 @@ static const int kAudioBuffers = 6;
     CGSize _videoSize;
     BOOL _videoActive;   // last content shown was video (not a JPEG)
     BOOL _waitKey;       // drop deltas until a keyframe arrives
+    // keep-alive: a silent stream so iOS keeps the app (and its listening socket) running in the background
+    AudioQueueRef _kaQueue;
 }
 
 - (void)viewDidLoad {
@@ -115,25 +123,41 @@ static const int kAudioBuffers = 6;
     [self updateHostButton];
     NSError *err = nil;
     if (![self.server start:&err]) {
-        self.status.text = [NSString stringWithFormat:@"Не удалось открыть порт %d: %@", kPort, err.localizedDescription];
+        self.status.text = [NSString stringWithFormat:L(@"Не удалось открыть порт %d: %@", @"Could not open port %d: %@"), kPort, err.localizedDescription];
         return;
     }
     [self showWaiting];
+
+    [self startKeepAlive];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(showWaiting)
                                                  name:UIApplicationDidBecomeActiveNotification object:nil];
 }
 
 - (void)showWaiting {
-    if (self.screen.image) return;
-    NSString *ip = [FrameServer wifiAddress] ?: @"нет Wi-Fi";
+    if (_peerIp) return; // a host is on the line: leave its picture alone
+    // The video layer keeps its last (black) frame on top of everything, so take it down explicitly —
+    // otherwise coming back from the background shows a black screen instead of this one.
+    if (_videoActive) [self stopVideo];
+    _videoLayer.hidden = YES;
+    self.screen.image = nil;
+    self.screen.hidden = NO;
+    NSString *ip = [FrameServer wifiAddress] ?: L(@"нет Wi-Fi", @"no Wi-Fi");
     NSString *pref = self.server.preferredHost;
     self.status.hidden = NO; _logo.hidden = NO;
+    NSString *who = pref.length
+        ? [NSString stringWithFormat:L(@"Показывается только хост %@ (и любой по USB).", @"Only host %@ is shown (plus anything over USB)."), [self hostLabel:pref]]
+        : L(@"Принимается любой хост.", @"Any host is accepted.");
     self.status.text = [NSString stringWithFormat:
-        @"iPad Display\n\nОжидание компьютера…\n\n"
-        @"Wi-Fi: iPad виден хосту автоматически (адрес %@, порт %d).\n"
-        @"USB: подключите кабель, хост найдёт iPad через usbmuxd.\n\n%@",
-        ip, kPort, pref.length ? [NSString stringWithFormat:@"Принимается только хост %@ (и любой по USB). Сменить: кнопка вверху или тап тремя пальцами.", [self hostLabel:pref]] : @"Принимается любой хост. Выбрать конкретный: кнопка вверху или тап тремя пальцами."];
+        L(@"iPad Display\n\nОжидание компьютера…\n\n"
+          @"Wi-Fi: хост находит iPad сам (адрес %@, порт %d).\n"
+          @"USB: подключите кабель — хост найдёт iPad сам.\n\n"
+          @"%@ Сменить: кнопка вверху или тап тремя пальцами.",
+          @"iPad Display\n\nWaiting for a computer…\n\n"
+          @"Wi-Fi: the host finds this iPad by itself (address %@, port %d).\n"
+          @"USB: plug the cable in — the host finds the iPad by itself.\n\n"
+          @"%@ To change: the button above or a three-finger tap."),
+        ip, kPort, who];
     [self updateHostButton];
 }
 
@@ -240,7 +264,7 @@ static const int kAudioBuffers = 6;
 
 - (void)updateHostButton {
     NSString *pref = self.server.preferredHost;
-    NSString *t = pref.length ? [NSString stringWithFormat:@"Хост: %@ ▾", [self hostLabel:pref]] : @"Хост: любой ▾";
+    NSString *t = pref.length ? [NSString stringWithFormat:L(@"Хост: %@ ▾", @"Host: %@ ▾"), [self hostLabel:pref]] : L(@"Хост: любой ▾", @"Host: any ▾");
     [_hostBtn setTitle:t forState:UIControlStateNormal];
     _hostBtn.hidden = _videoActive || self.screen.image != nil;
 }
@@ -251,7 +275,7 @@ static const int kAudioBuffers = 6;
 
 - (void)frameServerDidReceiveHostName:(NSString *)name {
     if (_peerIp.length && ![_peerIp isEqualToString:@"127.0.0.1"]) { _hosts[_peerIp] = name; [self updateHostButton]; }
-    if (!self.status.hidden) self.status.text = [NSString stringWithFormat:@"Подключено: %@\nОжидание изображения…", [self hostLabel:_peerIp ?: @""]];
+    if (!self.status.hidden) self.status.text = [NSString stringWithFormat:L(@"Подключено: %@\nОжидание изображения…", @"Connected: %@\nWaiting for the picture…"), [self hostLabel:_peerIp ?: @""]];
 }
 
 - (void)choosePreferredHost:(NSString *)ip {
@@ -267,18 +291,18 @@ static const int kAudioBuffers = 6;
 
 - (void)showHostPicker {
     if (self.presentedViewController) return;
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Какой компьютер показывать"
-        message:@"USB-подключение принимается всегда. По Wi-Fi — только выбранный хост."
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:L(@"Какой компьютер показывать", @"Which computer to show")
+        message:L(@"USB-подключение принимается всегда. По Wi-Fi — только выбранный хост.", @"USB is always accepted. Over Wi-Fi, only the chosen host is.")
         preferredStyle:UIAlertControllerStyleActionSheet];
     NSString *pref = self.server.preferredHost;
-    [ac addAction:[UIAlertAction actionWithTitle:(pref.length ? @"Любой хост" : @"✓ Любой хост") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { [self choosePreferredHost:nil]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:(pref.length ? L(@"Любой хост", @"Any host") : L(@"✓ Любой хост", @"✓ Any host")) style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { [self choosePreferredHost:nil]; }]];
     NSArray *ips = [_hosts.allKeys sortedArrayUsingSelector:@selector(compare:)];
     for (NSString *ip in ips) {
         NSString *title = [NSString stringWithFormat:@"%@%@", [ip isEqualToString:pref] ? @"✓ " : @"", [self hostLabel:ip]];
         [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { [self choosePreferredHost:ip]; }]];
     }
-    if (!ips.count) [ac addAction:[UIAlertAction actionWithTitle:@"(хосты в сети не найдены — запустите хост)" style:UIAlertActionStyleDefault handler:nil]];
-    [ac addAction:[UIAlertAction actionWithTitle:@"Отмена" style:UIAlertActionStyleCancel handler:nil]];
+    if (!ips.count) [ac addAction:[UIAlertAction actionWithTitle:L(@"(хосты в сети не найдены — запустите хост)", @"(no hosts on the network — start the host app)") style:UIAlertActionStyleDefault handler:nil]];
+    [ac addAction:[UIAlertAction actionWithTitle:L(@"Отмена", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     ac.popoverPresentationController.sourceView = self.view;
     ac.popoverPresentationController.sourceRect = _hostBtn.hidden ? CGRectMake(self.view.bounds.size.width / 2, 40, 1, 1) : _hostBtn.frame;
     [self presentViewController:ac animated:YES completion:nil];
@@ -288,7 +312,7 @@ static const int kAudioBuffers = 6;
 
 - (void)frameServerDidConnect:(NSString *)peer {
     _peerIp = [[peer componentsSeparatedByString:@":"] firstObject];
-    self.status.text = [NSString stringWithFormat:@"Подключено: %@\nОжидание изображения…", [self hostLabel:_peerIp]];
+    self.status.text = [NSString stringWithFormat:L(@"Подключено: %@\nОжидание изображения…", @"Connected: %@\nWaiting for the picture…"), [self hostLabel:_peerIp]];
 }
 
 - (void)frameServerDidDisconnect {
@@ -413,6 +437,40 @@ static void dbg(NSString *fmt, ...) {
     [h seekToEndOfFile];
     [h writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
     [h closeFile];
+}
+
+// ---- keep-alive ----------------------------------------------------------
+// iOS suspends a backgrounded app within seconds and closes its sockets, so the host could no longer
+// reach us after a tap on Home or a lock. With UIBackgroundModes=audio the app keeps running as long as
+// it is playing something, so we always play silence: two 0.5 s buffers of zeros, re-queued forever.
+static void AQKeepAliveCallback(void *userData, AudioQueueRef q, AudioQueueBufferRef buf) {
+    memset(buf->mAudioData, 0, buf->mAudioDataBytesCapacity);
+    buf->mAudioDataByteSize = buf->mAudioDataBytesCapacity;
+    AudioQueueEnqueueBuffer(q, buf, 0, NULL);
+}
+
+- (void)startKeepAlive {
+    if (_kaQueue) return;
+    AudioStreamBasicDescription f;
+    memset(&f, 0, sizeof(f));
+    f.mSampleRate = 8000;
+    f.mFormatID = kAudioFormatLinearPCM;
+    f.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
+    f.mChannelsPerFrame = 1;
+    f.mBitsPerChannel = 16;
+    f.mBytesPerFrame = 2;
+    f.mFramesPerPacket = 1;
+    f.mBytesPerPacket = 2;
+    OSStatus ns = AudioQueueNewOutput(&f, AQKeepAliveCallback, (__bridge void *)self, NULL, NULL, 0, &_kaQueue);
+    if (ns != noErr) { dbg(@"keep-alive queue failed %d", (int)ns); _kaQueue = NULL; return; }
+    AudioQueueSetParameter(_kaQueue, kAudioQueueParam_Volume, 0.0);
+    for (int i = 0; i < 2; i++) {
+        AudioQueueBufferRef b = NULL;
+        if (AudioQueueAllocateBuffer(_kaQueue, 8000, &b) != noErr) continue;
+        AQKeepAliveCallback((__bridge void *)self, _kaQueue, b);
+    }
+    OSStatus st = AudioQueueStart(_kaQueue, NULL);
+    dbg(@"keep-alive silence started (%d)", (int)st);
 }
 
 static void AQOutputCallback(void *userData, AudioQueueRef q, AudioQueueBufferRef buf) {

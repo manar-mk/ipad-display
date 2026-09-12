@@ -12,6 +12,7 @@ const root = path.join(__dirname, '..');
 const exe = path.join(root, 'node_modules', 'electron', 'dist', 'electron.exe');
 const icon = path.join(root, 'assets', 'icon.ico');
 const ps = `
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $ws = New-Object -ComObject WScript.Shell
 $lnk = $ws.CreateShortcut((Join-Path $ws.SpecialFolders('Desktop') 'iPad Display.lnk'))
 $lnk.TargetPath = '${exe.replace(/'/g, "''")}'

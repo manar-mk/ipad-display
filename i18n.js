@@ -1,0 +1,239 @@
+// Панель на двух языках / the panel in two languages.
+// Разметка: <span data-i18n="key">, атрибуты — data-i18n-title / data-i18n-placeholder.
+// Скрипт: t('key', { n: 1 }) — подстановки вида {n}.
+(function (global) {
+  const RU = {
+    'app.subtitle': 'второй монитор из старого iPad',
+    'app.help': 'Как пользоваться',
+    'app.lang': 'Язык',
+    'pill.starting': 'запуск…',
+    'pill.connectedUsb': 'iPad подключён по USB',
+    'pill.connectedWifi': 'iPad подключён по Wi-Fi',
+    'pill.connectedIdle': 'подключён, передача остановлена',
+    'pill.declined': 'iPad показывает другой компьютер',
+    'pill.foundConnecting': 'iPad найден, подключение…',
+    'pill.foundIdle': 'iPad найден, нажмите «Старт»',
+    'pill.runningNotFound': 'передача идёт, iPad не найден',
+    'pill.notFound': 'iPad не найден',
+
+    'help.title': 'Как пользоваться',
+    'help.s1': '<b>На iPad</b> откройте приложение «iPad Display» (синяя иконка с планшетом). Оно покажет экран ожидания с адресом.',
+    'help.s2': '<b>Здесь</b> нажмите <span class="kbd">Старт</span>. Хост включит виртуальный монитор, найдёт iPad в сети сам и начнёт передачу. Кабель USB подключать не обязательно, но с ним задержка меньше и хост переключится на него автоматически.',
+    'help.s3': '<b>Перетащите</b> нужное окно на новый монитор: в Windows он появляется в «Параметры → Система → Дисплей», там же задаётся его расположение относительно основного экрана.',
+    'help.s4': '<b>Звук:</b> в «Микшере громкости» назначьте нужному приложению устройство вывода «CABLE Input» — этот звук пойдёт на iPad. Устройство появляется только пока идёт передача.',
+    'help.s5': '<b>Управление с iPad:</b> один палец — мышь, два пальца — прокрутка, щипок — масштаб, долгое нажатие — правая кнопка. Тап тремя пальцами открывает выбор компьютера, если их несколько.',
+    'help.s6': '<b>Стоп</b> убирает виртуальный монитор и звуковое устройство, окна возвращаются на основной экран.',
+    'help.q1': 'iPad не находится', 'help.a1': 'Оба устройства в одной сети Wi-Fi; приложение на iPad открыто и не свёрнуто; включена галочка «подключаться автоматически».',
+    'help.q2': 'Нет звука на iPad', 'help.a2': 'Проверьте, что приложению назначен вывод «CABLE Input», громкость iPad не на нуле, и галочка «звук на iPad» включена.',
+    'help.q3': 'Картинка дёргается', 'help.a3': 'Подключите кабель USB или уменьшите битрейт; по Wi-Fi помогает 5 ГГц.',
+    'help.q4': 'Нет виртуального монитора', 'help.a4': 'Кнопка «Установить виртуальный монитор» в первом блоке (нужен запрос администратора).',
+    'help.q5': 'Приложение на iPad пропало', 'help.a5': 'Профиль джейлбрейка слетает после перезагрузки iPad: запустите EverPwnage и нажмите Jailbreak, затем откройте «iPad Display».',
+
+    'card.stream': 'Передача',
+    'btn.start': 'Старт', 'btn.stop': 'Стоп',
+    'stat.stopped': 'остановлено',
+    'stat.preparing': 'подготовка экрана и звука…',
+    'stat.captureError': 'ошибка захвата: {e}',
+    'stat.capture': 'захват {w}×{h}',
+    'stat.sound': ' · звук: {src}',
+    'audio.cable': 'кабель', 'audio.system': 'система',
+
+    'card.screen': 'Экран для iPad',
+    'screen.loading': 'загрузка…',
+    'screen.installVdd': 'Установить виртуальный монитор 1024×768',
+    'screen.createVdd': 'Создать виртуальный монитор 1024×768',
+    'screen.hint': 'Для второго монитора нужен виртуальный дисплей: он выбирается автоматически (второй экран 4:3). Если его нет, поставьте драйвер кнопкой выше. Выбор основного экрана даёт зеркало.',
+    'screen.hintMac': 'Для второго монитора нужен виртуальный дисплей: хост создаёт его сам при запуске (помощник driver/macos/vdisplay, CGVirtualDisplay) и выбирает автоматически. Если его нет, нажмите кнопку выше; если не получается — поставьте DeskPad (brew install --cask deskpad) и задайте в нём 1024×768.',
+    'screen.installing': 'установка… подтвердите запрос администратора',
+    'screen.creating': 'создание… (первый раз собирается swiftc)',
+    'screen.done': 'готово',
+    'screen.failed': 'ошибка, код {code}',
+
+    'card.connection': 'Подключение iPad',
+    'conn.state': 'Состояние:',
+    'conn.found': 'Найдено в сети:',
+    'conn.usb': 'USB:',
+    'conn.auto': 'подключаться автоматически',
+    'conn.manual': 'Вручную',
+    'conn.host': 'Хост', 'conn.port': 'Порт',
+    'conn.connect': 'Подключить', 'conn.disconnect': 'Отключить',
+    'conn.hint': 'Откройте «iPad Display» на iPad: в одной сети хост находит его сам, по кабелю — через usbmuxd (на Windows нужен iTunes с Apple Mobile Device Support).',
+    'conn.nobody': 'пока никого',
+    'conn.busy': '{ip} (занят)',
+    'conn.noUsbmuxd': 'нет usbmuxd',
+    'conn.noDevices': 'нет устройств',
+    'conn.autoOff': 'iPad виден в сети, но автоподключение выключено — включите галочку выше или подключитесь вручную.',
+    'state.off': 'выкл', 'state.connecting': 'подключение…', 'state.connected': 'подключено',
+    'state.retrying': 'нет соединения, повтор…', 'state.declined': 'отклонено',
+    'state.viaUsb': ' по USB', 'state.viaWifi': ' по Wi-Fi ({host})',
+
+    'card.quality': 'Качество',
+    'q.size': 'Размер', 'q.sizeNative': 'без масштабирования',
+    'q.fps': 'FPS', 'q.codec': 'Кодек', 'q.bitrate': 'битрейт', 'q.kbps': 'кбит/с',
+    'q.codecAuto': 'авто (аппаратный H.264 → WebCodecs → JPEG)',
+    'q.codecFfmpegWin': 'H.264 аппаратно (ffmpeg + Media Foundation)',
+    'q.codecFfmpegMac': 'H.264 аппаратно (ffmpeg + VideoToolbox)',
+    'q.codecWebCodecs': 'H.264 программно (WebCodecs)',
+    'q.hint': 'Кодек и битрейт работают для приложения на iPad, JPEG — для Safari и как запасной путь.',
+    'v.hw': 'H.264 аппаратно ({enc}) · {fps} fps · {mbps} Мбит/с',
+    'v.sw': 'H.264 {w}×{h} · {fps} fps · {mbps} Мбит/с',
+    'v.dropped': ' · пропущено {n}',
+    'v.latency': ' · задержка сеть+декодер {ms} мс',
+    'v.waitHw': 'H.264 аппаратно: ждёт подключения приложения',
+    'v.wait': 'H.264: ждёт подключения приложения',
+    'v.jpeg': 'JPEG',
+
+    'card.audio': 'Звук и управление',
+    'a.enable': 'звук на iPad',
+    'a.source': 'источник',
+    'a.auto': 'авто: виртуальный кабель, иначе весь системный звук',
+    'a.loopback': 'весь системный звук',
+    'a.device': 'устройство записи',
+    'a.makeDevice': 'Создать устройство «iPad Display + динамики»',
+    'a.touch': 'касания с iPad как мышь',
+    'a.manageDisplay': 'монитор только на время работы',
+    'a.manageAudio': 'убирать звуковое устройство при остановке',
+    'a.audioDefault': 'делать его устройством по умолчанию',
+    'a.autostart': 'запускать передачу сразу при запуске',
+    'a.defaultFailed': 'Не удалось сделать «iPad Display» устройством по умолчанию: его возвращает звуковая утилита (Nahimic/Realtek). Назначьте нужное приложение на кабель в «Микшер громкости» или закройте утилиту.',
+
+    'card.safari': 'Без приложения: Safari на iPad',
+    'safari.browsers': 'Подключено браузеров:',
+    'safari.hint': 'Отсканируйте код на iPad. «Поделиться → На экран Домой» даёт полноэкранный режим, звук включается тапом по экрану.',
+    'safari.noNetwork': 'Сетевой адрес не найден — подключите Wi-Fi/Ethernet',
+    'safari.openHint': 'открыть в браузере для проверки',
+    'err.server': 'Не удалось запустить сервер: {m}',
+
+    'mac.screen': 'Нет разрешения «Запись экрана» для Electron: Системные настройки → Конфиденциальность и безопасность → Запись экрана и системного звука → включите Electron, затем перезапустите хост.',
+    'mac.vdisplay': 'Виртуальный монитор: {e}',
+    'mac.ax': 'Нет разрешения «Универсальный доступ» для Electron (Системные настройки → Конфиденциальность и безопасность → Универсальный доступ) — касания не дойдут до мыши.',
+  };
+
+  const EN = {
+    'app.subtitle': 'a second monitor from an old iPad',
+    'app.help': 'How to use',
+    'app.lang': 'Language',
+    'pill.starting': 'starting…',
+    'pill.connectedUsb': 'iPad connected over USB',
+    'pill.connectedWifi': 'iPad connected over Wi-Fi',
+    'pill.connectedIdle': 'connected, streaming stopped',
+    'pill.declined': 'the iPad is showing another computer',
+    'pill.foundConnecting': 'iPad found, connecting…',
+    'pill.foundIdle': 'iPad found, press “Start”',
+    'pill.runningNotFound': 'streaming, iPad not found',
+    'pill.notFound': 'iPad not found',
+
+    'help.title': 'How to use',
+    'help.s1': '<b>On the iPad</b> open the “iPad Display” app (the blue tablet icon). It shows a waiting screen with its address.',
+    'help.s2': '<b>Here</b> press <span class="kbd">Start</span>. The host turns on the virtual monitor, finds the iPad on the network and starts streaming. A USB cable is optional, but it lowers latency and the host switches to it automatically.',
+    'help.s3': '<b>Drag</b> a window onto the new monitor: on Windows it appears under Settings → System → Display, where you also arrange it around your main screen.',
+    'help.s4': '<b>Sound:</b> in the Volume mixer set an app’s output device to “CABLE Input” — that audio goes to the iPad. The device only exists while streaming.',
+    'help.s5': '<b>Control from the iPad:</b> one finger is the mouse, two fingers scroll, pinch zooms, a long press is the right button. A three-finger tap opens the computer picker when you have several.',
+    'help.s6': '<b>Stop</b> removes the virtual monitor and the audio device; windows move back to the main screen.',
+    'help.q1': 'The iPad is not found', 'help.a1': 'Both devices on the same Wi-Fi network; the iPad app open and not in the background; the “connect automatically” box ticked.',
+    'help.q2': 'No sound on the iPad', 'help.a2': 'Check that the app is routed to “CABLE Input”, the iPad volume is up, and the “sound to the iPad” box is ticked.',
+    'help.q3': 'The picture stutters', 'help.a3': 'Plug in the USB cable or lower the bitrate; on Wi-Fi the 5 GHz band helps.',
+    'help.q4': 'No virtual monitor', 'help.a4': 'Use the “Install virtual monitor” button in the first card (it asks for administrator rights).',
+    'help.q5': 'The iPad app disappeared', 'help.a5': 'The jailbreak does not survive a reboot: run EverPwnage, press Jailbreak, then open “iPad Display”.',
+
+    'card.stream': 'Streaming',
+    'btn.start': 'Start', 'btn.stop': 'Stop',
+    'stat.stopped': 'stopped',
+    'stat.preparing': 'preparing the screen and sound…',
+    'stat.captureError': 'capture error: {e}',
+    'stat.capture': 'capturing {w}×{h}',
+    'stat.sound': ' · sound: {src}',
+    'audio.cable': 'cable', 'audio.system': 'system',
+
+    'card.screen': 'Screen sent to the iPad',
+    'screen.loading': 'loading…',
+    'screen.installVdd': 'Install the 1024×768 virtual monitor',
+    'screen.createVdd': 'Create the 1024×768 virtual monitor',
+    'screen.hint': 'A second monitor needs a virtual display: it is picked automatically (the second 4:3 screen). If there is none, install the driver with the button above. Choosing your main screen mirrors it instead.',
+    'screen.hintMac': 'A second monitor needs a virtual display: the host creates it at startup (the driver/macos/vdisplay helper, CGVirtualDisplay) and selects it automatically. If it is missing, press the button above; if that fails, install DeskPad (brew install --cask deskpad) and set it to 1024×768.',
+    'screen.installing': 'installing… confirm the administrator prompt',
+    'screen.creating': 'creating… (swiftc compiles the helper the first time)',
+    'screen.done': 'done',
+    'screen.failed': 'failed, code {code}',
+
+    'card.connection': 'iPad connection',
+    'conn.state': 'State:',
+    'conn.found': 'Found on the network:',
+    'conn.usb': 'USB:',
+    'conn.auto': 'connect automatically',
+    'conn.manual': 'Manual',
+    'conn.host': 'Host', 'conn.port': 'Port',
+    'conn.connect': 'Connect', 'conn.disconnect': 'Disconnect',
+    'conn.hint': 'Open “iPad Display” on the iPad: on the same network the host finds it by itself, over the cable it goes through usbmuxd (on Windows that comes with iTunes / Apple Devices).',
+    'conn.nobody': 'nobody yet',
+    'conn.busy': '{ip} (busy)',
+    'conn.noUsbmuxd': 'no usbmuxd',
+    'conn.noDevices': 'no devices',
+    'conn.autoOff': 'The iPad is visible on the network but auto-connect is off — tick the box above or connect manually.',
+    'state.off': 'off', 'state.connecting': 'connecting…', 'state.connected': 'connected',
+    'state.retrying': 'no connection, retrying…', 'state.declined': 'declined',
+    'state.viaUsb': ' over USB', 'state.viaWifi': ' over Wi-Fi ({host})',
+
+    'card.quality': 'Quality',
+    'q.size': 'Size', 'q.sizeNative': 'no scaling',
+    'q.fps': 'FPS', 'q.codec': 'Codec', 'q.bitrate': 'bitrate', 'q.kbps': 'kbit/s',
+    'q.codecAuto': 'auto (hardware H.264 → WebCodecs → JPEG)',
+    'q.codecFfmpegWin': 'H.264 hardware (ffmpeg + Media Foundation)',
+    'q.codecFfmpegMac': 'H.264 hardware (ffmpeg + VideoToolbox)',
+    'q.codecWebCodecs': 'H.264 software (WebCodecs)',
+    'q.hint': 'Codec and bitrate apply to the iPad app; JPEG is for Safari and as a fallback.',
+    'v.hw': 'H.264 hardware ({enc}) · {fps} fps · {mbps} Mbit/s',
+    'v.sw': 'H.264 {w}×{h} · {fps} fps · {mbps} Mbit/s',
+    'v.dropped': ' · dropped {n}',
+    'v.latency': ' · network+decode latency {ms} ms',
+    'v.waitHw': 'H.264 hardware: waiting for the app to connect',
+    'v.wait': 'H.264: waiting for the app to connect',
+    'v.jpeg': 'JPEG',
+
+    'card.audio': 'Sound and control',
+    'a.enable': 'sound to the iPad',
+    'a.source': 'source',
+    'a.auto': 'auto: the virtual cable, otherwise the whole system sound',
+    'a.loopback': 'whole system sound',
+    'a.device': 'recording device',
+    'a.makeDevice': 'Create the “iPad Display + speakers” device',
+    'a.touch': 'iPad touches drive the mouse',
+    'a.manageDisplay': 'monitor only while streaming',
+    'a.manageAudio': 'remove the audio device when stopped',
+    'a.audioDefault': 'make it the default output device',
+    'a.autostart': 'start streaming as soon as the app opens',
+    'a.defaultFailed': 'Could not make “iPad Display” the default device: a vendor audio utility (Nahimic/Realtek) puts its own back. Route the app to the cable in the Volume mixer, or close that utility.',
+
+    'card.safari': 'Without the app: Safari on the iPad',
+    'safari.browsers': 'Browsers connected:',
+    'safari.hint': 'Scan the code on the iPad. “Share → Add to Home Screen” gives a full-screen view; sound starts after a tap on the screen.',
+    'safari.noNetwork': 'No network address — connect Wi-Fi or Ethernet',
+    'safari.openHint': 'open in a browser to check',
+    'err.server': 'Could not start the server: {m}',
+
+    'mac.screen': 'Electron has no “Screen Recording” permission: System Settings → Privacy & Security → Screen & System Audio Recording → enable Electron, then restart the host.',
+    'mac.vdisplay': 'Virtual monitor: {e}',
+    'mac.ax': 'Electron has no “Accessibility” permission (System Settings → Privacy & Security → Accessibility) — touches will not reach the mouse.',
+  };
+
+  const DICT = { ru: RU, en: EN };
+  let lang = 'ru';
+
+  function pickAuto() {
+    const l = (global.navigator && navigator.language || 'en').toLowerCase();
+    return l.startsWith('ru') ? 'ru' : 'en';
+  }
+  function setLang(v) { lang = v === 'auto' ? pickAuto() : (DICT[v] ? v : 'en'); return lang; }
+  function t(key, vars) {
+    let s = (DICT[lang] && DICT[lang][key]) || RU[key] || key;
+    if (vars) for (const k of Object.keys(vars)) s = s.split('{' + k + '}').join(vars[k]);
+    return s;
+  }
+  // Walks the document and fills every [data-i18n] element (html), title and placeholder attributes.
+  function applyI18n(root) {
+    (root || document).querySelectorAll('[data-i18n]').forEach((el) => { el.innerHTML = t(el.getAttribute('data-i18n')); });
+    (root || document).querySelectorAll('[data-i18n-title]').forEach((el) => { el.title = t(el.getAttribute('data-i18n-title')); });
+  }
+
+  global.i18n = { t, setLang, applyI18n, get lang() { return lang; }, pickAuto };
+})(typeof window !== 'undefined' ? window : globalThis);

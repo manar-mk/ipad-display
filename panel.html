@@ -19,7 +19,6 @@
   body { font: 13.5px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
   svg.i { width: 17px; height: 17px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
-  /* top bar */
   header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
            padding: 12px 18px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
   header img.logo { width: 34px; height: 34px; border-radius: 8px; }
@@ -32,6 +31,7 @@
   .pill.on { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
   .pill.wait { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); }
   .pill.bad { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+  select#lang { padding: 4px 6px; font-size: 12px; }
 
   main { padding: 16px 18px 28px; display: grid; gap: 14px; grid-template-columns: 1fr; max-width: 1100px; }
   @media (min-width: 900px) { main { grid-template-columns: 1fr 1fr; } .wide { grid-column: 1 / -1; } }
@@ -76,13 +76,13 @@
   pre.log { max-height: 130px; overflow: auto; font-size: 11px; background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 8px; border-radius: 8px; white-space: pre-wrap; }
   .warn:not([hidden]) { display: block; color: var(--warn); font-size: 12px; margin-top: 6px; }
 
-  /* help */
   ol.steps { margin: 0; padding-left: 20px; } ol.steps li { margin: 7px 0; }
   .kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 1px 6px; font-size: 11.5px; }
   table.faq { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 12.5px; }
   table.faq td { border-top: 1px solid var(--line); padding: 7px 8px 7px 0; vertical-align: top; }
   table.faq td:first-child { color: var(--dim); width: 42%; }
 </style>
+<script src="i18n.js"></script>
 </head>
 <body>
 
@@ -90,66 +90,71 @@
   <img class="logo" src="assets/icon.png" alt="">
   <div>
     <div class="t">iPad Display</div>
-    <div class="s">второй монитор из старого iPad</div>
+    <div class="s" data-i18n="app.subtitle"></div>
   </div>
   <div class="grow"></div>
-  <span class="pill" id="pill"><span class="dot"></span><span id="pilltext">запуск…</span></span>
-  <button class="ghost" id="helpbtn" title="Показать инструкцию">
+  <span class="pill" id="pill"><span class="dot"></span><span id="pilltext" data-i18n="pill.starting"></span></span>
+  <select id="lang" data-i18n-title="app.lang">
+    <option value="auto">🌐 Auto</option>
+    <option value="ru">Русский</option>
+    <option value="en">English</option>
+  </select>
+  <button class="ghost" id="helpbtn">
     <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.2 2.9c-.5.2-.8.7-.8 1.2v.4"/><path d="M12 17h.01"/></svg>
-    Как пользоваться
+    <span data-i18n="app.help"></span>
   </button>
 </header>
 
 <main>
 
 <section class="card wide" id="help" hidden>
-  <h2><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.2 2.9c-.5.2-.8.7-.8 1.2v.4"/><path d="M12 17h.01"/></svg> Как пользоваться</h2>
+  <h2><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.2 2.9c-.5.2-.8.7-.8 1.2v.4"/><path d="M12 17h.01"/></svg> <span data-i18n="help.title"></span></h2>
   <ol class="steps">
-    <li><b>На iPad</b> откройте приложение «iPad Display» (синяя иконка с планшетом). Оно покажет экран ожидания с адресом.</li>
-    <li><b>Здесь</b> нажмите <span class="kbd">Старт</span>. Хост включит виртуальный монитор, найдёт iPad в сети сам и начнёт передачу. Кабель USB подключать не обязательно, но с ним задержка меньше и хост переключится на него автоматически.</li>
-    <li><b>Перетащите</b> нужное окно на новый монитор: в Windows он появляется в «Параметры → Система → Дисплей», там же задаётся его расположение относительно основного экрана.</li>
-    <li><b>Звук:</b> в «Микшере громкости» назначьте нужному приложению устройство вывода «CABLE Input» — этот звук пойдёт на iPad. Устройство появляется только пока идёт передача.</li>
-    <li><b>Управление с iPad:</b> один палец — мышь, два пальца — прокрутка, щипок — масштаб, долгое нажатие — правая кнопка. Тап тремя пальцами открывает выбор компьютера, если их несколько.</li>
-    <li><b>Стоп</b> убирает виртуальный монитор и звуковое устройство, окна возвращаются на основной экран.</li>
+    <li data-i18n="help.s1"></li>
+    <li data-i18n="help.s2"></li>
+    <li data-i18n="help.s3"></li>
+    <li data-i18n="help.s4"></li>
+    <li data-i18n="help.s5"></li>
+    <li data-i18n="help.s6"></li>
   </ol>
   <table class="faq">
-    <tr><td>iPad не находится</td><td>Оба устройства в одной сети Wi-Fi; приложение на iPad открыто и не свёрнуто; включена галочка «подключаться автоматически».</td></tr>
-    <tr><td>Нет звука на iPad</td><td>Проверьте, что приложению назначен вывод «CABLE Input», громкость iPad не на нуле, и галочка «звук на iPad» включена.</td></tr>
-    <tr><td>Картинка дёргается</td><td>Подключите кабель USB или уменьшите битрейт; по Wi-Fi помогает 5 ГГц.</td></tr>
-    <tr><td>Нет виртуального монитора</td><td>Кнопка «Установить виртуальный монитор» в первом блоке (нужен запрос администратора).</td></tr>
-    <tr><td>Приложение на iPad пропало</td><td>Профиль джейлбрейка слетает после перезагрузки iPad: запустите EverPwnage и нажмите Jailbreak, затем откройте «iPad Display».</td></tr>
+    <tr><td data-i18n="help.q1"></td><td data-i18n="help.a1"></td></tr>
+    <tr><td data-i18n="help.q2"></td><td data-i18n="help.a2"></td></tr>
+    <tr><td data-i18n="help.q3"></td><td data-i18n="help.a3"></td></tr>
+    <tr><td data-i18n="help.q4"></td><td data-i18n="help.a4"></td></tr>
+    <tr><td data-i18n="help.q5"></td><td data-i18n="help.a5"></td></tr>
   </table>
 </section>
 
 <section class="card wide">
-  <h2><svg class="i" viewBox="0 0 24 24"><path d="M5 5h14v10H5z"/><path d="M9 19h6"/><path d="M12 15v4"/></svg> Передача</h2>
+  <h2><svg class="i" viewBox="0 0 24 24"><path d="M5 5h14v10H5z"/><path d="M9 19h6"/><path d="M12 15v4"/></svg> <span data-i18n="card.stream"></span></h2>
   <div class="row">
-    <button class="primary" id="toggle">Старт</button>
-    <span class="stat" id="stat">остановлено</span>
+    <button class="primary" id="toggle" data-i18n="btn.start"></button>
+    <span class="stat" id="stat" data-i18n="stat.stopped"></span>
     <span class="stat" id="vstat"></span>
   </div>
   <canvas id="preview" width="320" height="240"></canvas>
 </section>
 
 <section class="card">
-  <h2><span class="n">1</span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/></svg> Экран для iPad</h2>
-  <div class="sources" id="sources">загрузка…</div>
+  <h2><span class="n">1</span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/></svg> <span data-i18n="card.screen"></span></h2>
+  <div class="sources" id="sources" data-i18n="screen.loading"></div>
   <div class="row" id="vddrow" hidden>
-    <button class="secondary" id="vddbtn">Установить виртуальный монитор 1024×768</button>
+    <button class="secondary" id="vddbtn" data-i18n="screen.installVdd"></button>
     <span class="stat" id="vddstat"></span>
   </div>
-  <div class="hint" id="vddhint">Для второго монитора нужен виртуальный дисплей: он выбирается автоматически (второй экран 4:3). Если его нет, поставьте драйвер кнопкой выше. Выбор основного экрана даёт зеркало.</div>
+  <div class="hint" id="vddhint" data-i18n="screen.hint"></div>
   <div class="warn" id="machint" hidden></div>
   <pre class="log" id="vddlog" hidden></pre>
 </section>
 
 <section class="card">
-  <h2><span class="n">2</span><svg class="i" viewBox="0 0 24 24"><path d="M4 17V7a2 2 0 0 1 2-2h9"/><path d="M20 7v10a2 2 0 0 1-2 2H9"/><path d="m16 3 4 4-4 4"/><path d="M8 21l-4-4 4-4"/></svg> Подключение iPad</h2>
-  <div class="row"><span class="stat">Состояние:</span> <span id="tcpstat" class="stat">выкл</span></div>
-  <div class="row"><span class="stat">Найдено в сети:</span> <span id="found" class="stat">пока никого</span> <span class="stat">USB:</span> <span id="usbdevs" class="stat">…</span></div>
+  <h2><span class="n">2</span><svg class="i" viewBox="0 0 24 24"><path d="M4 17V7a2 2 0 0 1 2-2h9"/><path d="M20 7v10a2 2 0 0 1-2 2H9"/><path d="m16 3 4 4-4 4"/><path d="M8 21l-4-4 4-4"/></svg> <span data-i18n="card.connection"></span></h2>
+  <div class="row"><span class="stat" data-i18n="conn.state"></span> <span id="tcpstat" class="stat"></span></div>
+  <div class="row"><span class="stat" data-i18n="conn.found"></span> <span id="found" class="stat"></span> <span class="stat" data-i18n="conn.usb"></span> <span id="usbdevs" class="stat">…</span></div>
   <div class="row">
-    <label class="chk"><input type="checkbox" id="autoconnect"> подключаться автоматически</label>
-    <button class="ghost" id="manualbtn">Вручную ▾</button>
+    <label class="chk"><input type="checkbox" id="autoconnect"> <span data-i18n="conn.auto"></span></label>
+    <button class="ghost" id="manualbtn"></button>
   </div>
   <div class="warn" id="connhint" hidden></div>
   <div class="row" id="manualrow" hidden>
@@ -157,71 +162,71 @@
       <option value="usb">USB (usbmuxd)</option>
       <option value="tcp">TCP / IP</option>
     </select>
-    <label id="hostlbl" hidden>Хост <input type="text" id="tcphost" value="127.0.0.1"></label>
-    <label>Порт <input type="number" id="tcpport" value="7801"></label>
-    <button class="secondary" id="tcpbtn">Подключить</button>
+    <label id="hostlbl" hidden><span data-i18n="conn.host"></span> <input type="text" id="tcphost" value="127.0.0.1"></label>
+    <label><span data-i18n="conn.port"></span> <input type="number" id="tcpport" value="7801"></label>
+    <button class="secondary" id="tcpbtn" data-i18n="conn.connect"></button>
   </div>
-  <div class="hint">Откройте «iPad Display» на iPad: в одной сети хост находит его сам, по кабелю — через usbmuxd (на Windows нужен iTunes с Apple Mobile Device Support).</div>
+  <div class="hint" data-i18n="conn.hint"></div>
 </section>
 
 <section class="card">
-  <h2><span class="n">3</span><svg class="i" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 8v8"/><path d="M19 8v8"/><path d="M8.5 5.5v13"/><path d="M15.5 5.5v13"/></svg> Качество</h2>
+  <h2><span class="n">3</span><svg class="i" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 8v8"/><path d="M19 8v8"/><path d="M8.5 5.5v13"/><path d="M15.5 5.5v13"/></svg> <span data-i18n="card.quality"></span></h2>
   <div class="row">
-    <label>Размер
+    <label><span data-i18n="q.size"></span>
       <select id="size">
         <option value="1024x768">1024×768 (iPad mini 1 / iPad 2)</option>
         <option value="1280x960">1280×960</option>
         <option value="2048x1536">2048×1536 (Retina)</option>
-        <option value="0x0">без масштабирования</option>
+        <option value="0x0" data-i18n="q.sizeNative"></option>
       </select>
     </label>
-    <label>FPS <input type="number" id="fps" value="60" min="1" max="60"></label>
+    <label><span data-i18n="q.fps"></span> <input type="number" id="fps" value="60" min="1" max="60"></label>
   </div>
   <div class="row">
-    <label>Кодек
+    <label><span data-i18n="q.codec"></span>
       <select id="codec">
-        <option value="auto">авто (аппаратный H.264 → WebCodecs → JPEG)</option>
-        <option value="ffmpeg">H.264 аппаратно (ffmpeg + Media Foundation)</option>
-        <option value="h264">H.264 программно (WebCodecs)</option>
+        <option value="auto" data-i18n="q.codecAuto"></option>
+        <option value="ffmpeg" data-i18n="q.codecFfmpegWin"></option>
+        <option value="h264" data-i18n="q.codecWebCodecs"></option>
         <option value="jpeg">JPEG</option>
       </select>
     </label>
-    <label>битрейт <input type="number" id="bitrate" value="6000" min="500" max="30000" step="500"> кбит/с</label>
+    <label><span data-i18n="q.bitrate"></span> <input type="number" id="bitrate" value="6000" min="500" max="30000" step="500"> <span data-i18n="q.kbps"></span></label>
     <label>JPEG <input type="range" id="q" min="30" max="95" value="60"> <span id="qv" class="stat">60</span></label>
   </div>
-  <div class="hint">Кодек и битрейт работают для приложения на iPad, JPEG — для Safari и как запасной путь.</div>
+  <div class="hint" data-i18n="q.hint"></div>
 </section>
 
 <section class="card">
-  <h2><span class="n">4</span><svg class="i" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19 6a8 8 0 0 1 0 12"/></svg> Звук и управление</h2>
+  <h2><span class="n">4</span><svg class="i" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19 6a8 8 0 0 1 0 12"/></svg> <span data-i18n="card.audio"></span></h2>
   <div class="row">
-    <label class="chk"><input type="checkbox" id="audio"> звук на iPad</label>
-    <label>источник <select id="asrc"><option value="loopback">весь системный звук</option></select></label>
-    <button class="secondary" id="audiobtn" hidden>Создать устройство «iPad Display + динамики»</button>
+    <label class="chk"><input type="checkbox" id="audio"> <span data-i18n="a.enable"></span></label>
+    <label><span data-i18n="a.source"></span> <select id="asrc"></select></label>
+    <button class="secondary" id="audiobtn" data-i18n="a.makeDevice" hidden></button>
   </div>
   <div class="row"><span class="stat" id="audiostat"></span></div>
   <div class="row">
-    <label class="chk"><input type="checkbox" id="touch"> касания с iPad как мышь</label>
+    <label class="chk"><input type="checkbox" id="touch"> <span data-i18n="a.touch"></span></label>
   </div>
   <div class="row">
-    <label class="chk" id="mdlbl"><input type="checkbox" id="manageDisplay"> монитор только на время работы</label>
-    <label class="chk" id="malbl"><input type="checkbox" id="manageAudio"> убирать звуковое устройство при остановке</label>
-    <label class="chk" id="adlbl"><input type="checkbox" id="audioDefault"> делать его устройством по умолчанию</label>
+    <label class="chk" id="mdlbl"><input type="checkbox" id="manageDisplay"> <span data-i18n="a.manageDisplay"></span></label>
+    <label class="chk" id="malbl"><input type="checkbox" id="manageAudio"> <span data-i18n="a.manageAudio"></span></label>
+    <label class="chk" id="adlbl"><input type="checkbox" id="audioDefault"> <span data-i18n="a.audioDefault"></span></label>
   </div>
   <div class="row">
-    <label class="chk"><input type="checkbox" id="autostart"> запускать передачу сразу при запуске</label>
+    <label class="chk"><input type="checkbox" id="autostart"> <span data-i18n="a.autostart"></span></label>
   </div>
   <span class="warn" id="axhint" hidden></span>
 </section>
 
 <section class="card">
-  <h2><span class="n">5</span><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><path d="M12 19.5h.01"/></svg> Без приложения: Safari на iPad</h2>
+  <h2><span class="n">5</span><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><path d="M12 19.5h.01"/></svg> <span data-i18n="card.safari"></span></h2>
   <div class="conn">
     <img id="qr" alt="QR">
     <div>
       <div id="urls">…</div>
-      <div class="row"><span class="stat">Подключено браузеров:</span> <span id="wsclients" class="stat">0</span></div>
-      <div class="hint">Отсканируйте код на iPad. «Поделиться → На экран Домой» даёт полноэкранный режим, звук включается тапом по экрану.</div>
+      <div class="row"><span class="stat" data-i18n="safari.browsers"></span> <span id="wsclients" class="stat">0</span></div>
+      <div class="hint" data-i18n="safari.hint"></div>
     </div>
   </div>
 </section>
@@ -230,6 +235,7 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
+const t = (k, v) => i18n.t(k, v);
 let settings = {}, sources = [], selected = null, running = false, stream = null, timer = null;
 const video = document.createElement('video'); video.muted = true; video.playsInline = true;
 const work = document.createElement('canvas'), wctx = work.getContext('2d', { alpha: false });
@@ -243,13 +249,14 @@ function applySettingsToUI() {
   $('#size').value = settings.size; $('#fps').value = settings.fps; $('#q').value = settings.quality; $('#qv').textContent = settings.quality;
   $('#codec').value = settings.codec || 'auto'; $('#bitrate').value = settings.bitrate || 6000;
   for (const k of ['autostart', 'audio', 'touch', 'autoconnect', 'manageDisplay', 'manageAudio', 'audioDefault']) $('#' + k).checked = !!settings[k];
+  $('#lang').value = settings.lang || 'auto';
   const win = settings.platform === 'win32';
   $('#mdlbl').hidden = !win; $('#malbl').hidden = !win; $('#adlbl').hidden = !win;
 }
 function readSettingsFromUI() {
   return { size: $('#size').value, fps: Number($('#fps').value) || 15, quality: Number($('#q').value) || 60,
     codec: $('#codec').value, bitrate: Number($('#bitrate').value) || 6000,
-    autostart: $('#autostart').checked, audio: $('#audio').checked, audioSource: $('#asrc').value, touch: $("#touch").checked, manageDisplay: $("#manageDisplay").checked, manageAudio: $("#manageAudio").checked, audioDefault: $("#audioDefault").checked, autoconnect: $('#autoconnect').checked };
+    autostart: $('#autostart').checked, audio: $('#audio').checked, audioSource: $('#asrc').value, touch: $("#touch").checked, manageDisplay: $("#manageDisplay").checked, manageAudio: $("#manageAudio").checked, audioDefault: $("#audioDefault").checked, autoconnect: $('#autoconnect').checked, lang: $('#lang').value || 'auto' };
 }
 async function persist() { settings = await host.saveSettings(readSettingsFromUI()); }
 
@@ -268,8 +275,8 @@ async function loadSources() {
   });
   $('#vddrow').hidden = hasVirtual;
   if (settings.platform === 'darwin') {
-    $('#vddbtn').textContent = 'Создать виртуальный монитор 1024×768';
-    $('#vddhint').textContent = 'Для режима «второй монитор» нужен виртуальный дисплей: хост создаёт его сам при запуске (помощник driver/macos/vdisplay, CGVirtualDisplay) и выбирает автоматически (второй экран 4:3). Если его нет, нажмите кнопку выше; если не получается — поставьте DeskPad (brew install --cask deskpad) и задайте в нём 1024×768. Выбор основного экрана даёт зеркало.';
+    $('#vddbtn').textContent = t('screen.createVdd');
+    $('#vddhint').textContent = t('screen.hintMac');
   }
 }
 
@@ -277,13 +284,13 @@ async function loadInfo() {
   const info = await host.getInfo();
   settings = { ...info.settings, platform: info.platform };
   if (info.platform === 'darwin') {
-    const o = $('#codec').querySelector('option[value=ffmpeg]'); if (o) o.textContent = 'H.264 аппаратно (ffmpeg + VideoToolbox)';
+    const o = $('#codec').querySelector('option[value=ffmpeg]'); if (o) o.textContent = t('q.codecFfmpegMac');
     $('#audiobtn').hidden = false; $('#audiobtn').title = 'Многовыходное устройство BlackHole 2ch + динамики: звук идёт и на Mac, и на iPad. Нужен brew install blackhole-2ch.';
   }
   $('#qr').src = info.qr || '';
   $('#urls').innerHTML = info.urls.length
-    ? info.urls.map(u => '<div><code class="url" title="открыть в браузере для проверки">' + u + '</code></div>').join('')
-    : '<span class="warn">Сетевой адрес не найден — подключите Wi-Fi/Ethernet</span>';
+    ? info.urls.map(u => '<div><code class="url" title="' + t('safari.openHint') + '">' + u + '</code></div>').join('')
+    : '<span class="warn">' + t('safari.noNetwork') + '</span>';
   document.querySelectorAll('.url').forEach(el => el.onclick = () => host.openExternal(el.textContent));
   return info;
 }
@@ -301,8 +308,8 @@ async function loadAudioDevices() {
   const sel = $('#asrc'), cur = settings.audioSource || 'auto';
   let devs = [];
   try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications'); } catch (e) { /* no devices */ }
-  sel.innerHTML = '<option value="auto">авто: виртуальный кабель, иначе весь системный звук</option><option value="loopback">весь системный звук</option>'
-    + devs.map(d => '<option value="' + d.deviceId + '">' + (d.label || 'устройство записи') + (isCable(d.label) ? ' ★' : '') + '</option>').join('');
+  sel.innerHTML = '<option value="auto">' + t('a.auto') + '</option><option value="loopback">' + t('a.loopback') + '</option>'
+    + devs.map(d => '<option value="' + d.deviceId + '">' + (d.label || t('a.device')) + (isCable(d.label) ? ' ★' : '') + '</option>').join('');
   sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'auto';
   host.log('audio inputs: ' + devs.map(d => d.label).join(' | '));
   return devs;
@@ -325,10 +332,10 @@ async function startAudio(s) {
   if (srcId !== 'loopback') {
     try {
       const ms = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: srcId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-      track = ms.getAudioTracks()[0]; audioLabel = 'кабель';
+      track = ms.getAudioTracks()[0]; audioLabel = t('audio.cable');
     } catch (e) { host.log('audio device failed: ' + e.message); }
   }
-  if (!track) { track = s.getAudioTracks()[0]; audioLabel = 'система'; }
+  if (!track) { track = s.getAudioTracks()[0]; audioLabel = t('audio.system'); }
   if (!track) { host.log('audio: no track'); return; }
   audioTrack = track; host.log('audio: using ' + audioLabel + ' ' + track.label);
   const RATE = 22050;
@@ -428,13 +435,14 @@ setInterval(async () => {
   const dt = (Date.now() - vT) / 1000; vT = Date.now();
   extEnc = !!s.external; extLatency = s.latency;
   if (extEnc && enc) stopEncoder();
-  const lat = s.latency !== null && s.latency !== undefined ? ' · задержка сеть+декодер ' + s.latency + ' мс' : '';
-  const line = extEnc ? ('H.264 аппаратно (ffmpeg/' + (settings.platform === 'darwin' ? 'VideoToolbox' : 'MF') + ') · ' + s.fps.toFixed(0) + ' fps · ' + (s.kbps / 1000).toFixed(1) + ' Мбит/с' + (s.dropped ? ' · пропущено ' + s.dropped : '') + lat)
-    : enc ? ('H.264 ' + encW + '×' + encH + ' · ' + (vFrames / dt).toFixed(0) + ' fps · ' + (vBytes * 8 / dt / 1e6).toFixed(1) + ' Мбит/с' + (s.dropped ? ' · пропущено ' + s.dropped : '') + ' · ' + encCfgName + lat)
-    : (s.encoder === 'ffmpeg' ? 'H.264 аппаратно: ждёт подключения приложения' : useH264() ? 'H.264: ждёт подключения приложения' : 'JPEG');
+  const lat = s.latency !== null && s.latency !== undefined ? t('v.latency', { ms: s.latency }) : '';
+  const drop = s.dropped ? t('v.dropped', { n: s.dropped }) : '';
+  const line = extEnc ? (t('v.hw', { enc: 'ffmpeg/' + (settings.platform === 'darwin' ? 'VideoToolbox' : 'MF'), fps: s.fps.toFixed(0), mbps: (s.kbps / 1000).toFixed(1) }) + drop + lat)
+    : enc ? (t('v.sw', { w: encW, h: encH, fps: (vFrames / dt).toFixed(0), mbps: (vBytes * 8 / dt / 1e6).toFixed(1) }) + drop + ' · ' + encCfgName + lat)
+    : (s.encoder === 'ffmpeg' ? t('v.waitHw') : useH264() ? t('v.wait') : t('v.jpeg'));
   $('#vstat').textContent = line;
   // with the external encoder no JPEG frames flow, so #stat would keep the 'preparing' text
-  if (running && extEnc) $('#stat').textContent = 'захват ' + (video.videoWidth || '?') + '×' + (video.videoHeight || '?') + (audioNode ? ' · звук: ' + audioLabel : '');
+  if (running && extEnc) $('#stat').textContent = t('stat.capture', { w: video.videoWidth || '?', h: video.videoHeight || '?' }) + (audioNode ? t('stat.sound', { src: audioLabel }) : '');
   if ((enc || extEnc) && (Date.now() / 1000 | 0) % 5 === 0) host.log('video: ' + line);
   if ((Date.now() / 1000 | 0) % 5 === 0) host.log('audio: chunks=' + aChunks + ' ctx=' + (audioCtx ? audioCtx.state : '-') + ' track=' + (audioTrack ? audioTrack.readyState + (audioTrack.muted ? '/muted' : '') : '-') + ' label=' + audioLabel + ' toApp sent=' + s.audioSent + ' dropped=' + s.audioDropped);
   vFrames = 0; vBytes = 0;
@@ -443,7 +451,7 @@ setInterval(async () => {
 // ---------- capture ----------
 async function start() {
   // bring up the virtual monitor and move the sound to the cable before we pick a capture source
-  $('#stat').textContent = 'подготовка экрана и звука…';
+  $('#stat').textContent = t('stat.preparing');
   await host.sessionStart();
   await loadSources();
   try {
@@ -453,12 +461,12 @@ async function start() {
     stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 } }, audio: wantLoopback });
   } catch (e) {
     try { stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 } }, audio: false }); }
-    catch (e2) { $('#stat').textContent = 'ошибка захвата: ' + e2.message; return; }
+    catch (e2) { $('#stat').textContent = t('stat.captureError', { e: e2.message }); return; }
   }
   video.srcObject = new MediaStream(stream.getVideoTracks()); await video.play();
   await h264Available();
   running = true; prevSmall = null; frames = 0; bytes = 0; statT = Date.now();
-  $('#toggle').textContent = 'Стоп'; $('#toggle').classList.add('stop'); refreshPill();
+  $('#toggle').textContent = t('btn.stop'); $('#toggle').classList.add('stop'); refreshPill();
   startAudio(stream);
   schedule();
 }
@@ -473,7 +481,7 @@ function schedule() {
 function stop(keepSession) {
   running = false; clearInterval(timer); clearInterval(encTimer); stopAudio(); stopEncoder();
   if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
-  $('#toggle').textContent = 'Старт'; $('#toggle').classList.remove('stop'); $('#stat').textContent = 'остановлено'; refreshPill();
+  $('#toggle').textContent = t('btn.start'); $('#toggle').classList.remove('stop'); $('#stat').textContent = t('stat.stopped'); refreshPill();
   host.log('panel stop(keep=' + !!keepSession + ') from ' + ((new Error()).stack || '').split('\n').slice(1, 3).join(' <- ').replace(/\s+/g, ' '));
   if (!keepSession) host.sessionStop(); // put the virtual monitor and the sound device back
 }
@@ -504,28 +512,28 @@ function tick() {
     frames++; bytes += ab.byteLength;
     pctx.drawImage(work, 0, 0, preview.width, preview.height);
     const dt = (Date.now() - statT) / 1000;
-    if (dt >= 1) { $('#stat').textContent = w + '×' + h + ' · ' + (frames / dt).toFixed(1) + ' fps · ' + (bytes / dt / 1024 / 128).toFixed(2) + ' Мбит/с' + (audioNode ? ' · звук: ' + audioLabel : ''); frames = 0; bytes = 0; statT = Date.now(); }
+    if (dt >= 1) { $('#stat').textContent = w + '×' + h + ' · ' + (frames / dt).toFixed(1) + ' fps · ' + (bytes / dt / 1024 / 128).toFixed(2) + ' Мбит/с' + (audioNode ? t('stat.sound', { src: audioLabel }) : ''); frames = 0; bytes = 0; statT = Date.now(); }
   }, 'image/jpeg', Number($('#q').value) / 100);
 }
 
 // ---------- header: help, manual connect, status pill ----------
 let lastStatus = null;
 $('#helpbtn').onclick = () => { const h = $('#help'); h.hidden = !h.hidden; if (!h.hidden) h.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-$('#manualbtn').onclick = () => { const r = $('#manualrow'); r.hidden = !r.hidden; $('#manualbtn').textContent = r.hidden ? 'Вручную ▾' : 'Вручную ▴'; };
+$('#manualbtn').onclick = () => { const r = $('#manualrow'); r.hidden = !r.hidden; $('#manualbtn').textContent = t('conn.manual') + (r.hidden ? ' ▾' : ' ▴'); };
 function refreshPill() {
   const s = lastStatus, p = $('#pill');
   const found = !!(s && s.discovered.length), conn = !!(s && s.tcp.state === 'connected');
-  let cls = '', txt = 'iPad не найден';
-  if (conn && running) { cls = 'on'; txt = 'iPad подключён' + (s.tcp.mode === 'usb' ? ' по USB' : ' по Wi-Fi'); }
-  else if (conn) { cls = 'wait'; txt = 'подключён, передача остановлена'; }
-  else if (s && s.tcp.state === 'declined') { cls = 'bad'; txt = 'iPad показывает другой компьютер'; }
-  else if (found) { cls = 'wait'; txt = running ? 'iPad найден, подключение…' : 'iPad найден, нажмите «Старт»'; }
-  else if (running) { cls = 'wait'; txt = 'передача идёт, iPad не найден'; }
+  let cls = '', txt = t('pill.notFound');
+  if (conn && running) { cls = 'on'; txt = t(s.tcp.mode === 'usb' ? 'pill.connectedUsb' : 'pill.connectedWifi'); }
+  else if (conn) { cls = 'wait'; txt = t('pill.connectedIdle'); }
+  else if (s && s.tcp.state === 'declined') { cls = 'bad'; txt = t('pill.declined'); }
+  else if (found) { cls = 'wait'; txt = t(running ? 'pill.foundConnecting' : 'pill.foundIdle'); }
+  else if (running) { cls = 'wait'; txt = t('pill.runningNotFound'); }
   p.className = 'pill ' + cls; $('#pilltext').textContent = txt;
   // the most common reason for "nothing happens": the auto-connect checkbox is off
   const off = found && !$('#autoconnect').checked && !conn;
   $('#connhint').hidden = !off;
-  if (off) $('#connhint').textContent = 'iPad виден в сети, но автоподключение выключено — включите галочку выше или подключитесь вручную.';
+  if (off) $('#connhint').textContent = t('conn.autoOff');
 }
 
 // ---------- UI events ----------
@@ -542,10 +550,10 @@ $('#bitrate').onchange = async () => { await persist(); stopEncoder(); };
 $('#asrc').onchange = async () => { await persist(); if (running) restart(); };
 $('#tcpmode').onchange = () => { $('#hostlbl').hidden = $('#tcpmode').value === 'usb'; };
 $('#tcpbtn').onclick = async () => {
-  if ($('#tcpbtn').dataset.on) { await host.tcpDisconnect(); delete $('#tcpbtn').dataset.on; $('#tcpbtn').textContent = 'Подключить'; return; }
+  if ($('#tcpbtn').dataset.on) { await host.tcpDisconnect(); delete $('#tcpbtn').dataset.on; $('#tcpbtn').textContent = t('conn.connect'); return; }
   if ($('#tcpmode').value === 'usb') await host.usbConnect(Number($('#tcpport').value));
   else await host.tcpConnect($('#tcphost').value.trim(), Number($('#tcpport').value));
-  $('#tcpbtn').dataset.on = '1'; $('#tcpbtn').textContent = 'Отключить';
+  $('#tcpbtn').dataset.on = '1'; $('#tcpbtn').textContent = t('conn.disconnect');
 };
 $('#audiobtn').onclick = async () => {
   $('#audiostat').textContent = '…';
@@ -554,44 +562,60 @@ $('#audiobtn').onclick = async () => {
   if (!r.error && r.code === 0) setTimeout(loadAudioDevices, 2000);
 };
 $('#vddbtn').onclick = async () => {
-  $('#vddstat').textContent = settings.platform === 'darwin' ? 'создание… (первый раз собирается swiftc)' : 'установка… подтвердите запрос администратора';
+  $('#vddstat').textContent = t(settings.platform === 'darwin' ? 'screen.creating' : 'screen.installing');
   const r = await host.installVdd();
-  $('#vddstat').textContent = r.error ? r.error : (r.code === 0 ? 'готово' : 'ошибка, код ' + r.code);
+  $('#vddstat').textContent = r.error ? r.error : (r.code === 0 ? t('screen.done') : t('screen.failed', { code: r.code }));
   if (r.out) { $('#vddlog').hidden = false; $('#vddlog').textContent = r.out; }
   setTimeout(loadSources, 3000);
 };
 async function refreshUsb() {
   const r = await host.usbList();
   const el = $('#usbdevs');
-  if (r.error) { el.textContent = 'нет usbmuxd'; el.className = 'stat'; el.title = r.error; return; }
+  if (r.error) { el.textContent = t('conn.noUsbmuxd'); el.className = 'stat'; el.title = r.error; return; }
   el.className = 'stat ' + (r.devices.length ? 'ok' : '');
-  el.textContent = r.devices.length ? r.devices.map(d => d.serial.slice(0, 8) + '…').join(', ') : 'нет устройств';
+  el.textContent = r.devices.length ? r.devices.map(d => d.serial.slice(0, 8) + '…').join(', ') : t('conn.noDevices');
 }
-host.onStatus((s) => {
+function renderStatus(s) {
   appConnected = s.tcp.state === 'connected'; wsCount = s.ws.length; lastStatus = s; refreshPill();
   if (!appConnected) stopEncoder();
   $('#wsclients').textContent = s.ws.length + (s.ws.length ? ' (' + s.ws.map(ip => ip.replace('::ffff:', '')).join(', ') + ')' : '');
-  const map = { off: 'выкл', connecting: 'подключение…', connected: 'подключено', retrying: 'нет соединения, повтор…', declined: 'отклонено' };
+  const map = { off: t('state.off'), connecting: t('state.connecting'), connected: t('state.connected'), retrying: t('state.retrying'), declined: t('state.declined') };
   const el = $('#tcpstat');
-  const via = s.tcp.state === 'connected' ? (s.tcp.mode === 'usb' ? ' по USB' : ' по Wi-Fi (' + s.tcp.host + ')') : '';
+  const via = s.tcp.state === 'connected' ? (s.tcp.mode === 'usb' ? t('state.viaUsb') : t('state.viaWifi', { host: s.tcp.host })) : '';
   el.textContent = (map[s.tcp.state] || s.tcp.state) + via + (s.tcp.error ? ' — ' + s.tcp.error : '');
   el.className = 'stat ' + (s.tcp.state === 'connected' ? 'ok' : s.tcp.state === 'retrying' ? 'warn' : '');
-  $('#found').textContent = s.discovered.length ? s.discovered.join(', ') : 'пока никого';
+  $('#found').textContent = s.discovered.length ? s.discovered.map(d => (d.busy ? t('conn.busy', { ip: d.ip }) : d.ip)).join(', ') : t('conn.nobody');
   if (s.mac) { // macOS permissions and helpers
     const hints = [];
-    if (s.mac.screenAccess && s.mac.screenAccess !== 'granted') hints.push('Нет разрешения «Запись экрана» для Electron: Системные настройки → Конфиденциальность и безопасность → Запись экрана и системного звука → включите Electron, затем перезапустите хост.');
-    if (s.mac.vdisplayError) hints.push('Виртуальный монитор: ' + s.mac.vdisplayError);
+    if (s.mac.screenAccess && s.mac.screenAccess !== 'granted') hints.push(t('mac.screen'));
+    if (s.mac.vdisplayError) hints.push(t('mac.vdisplay', { e: s.mac.vdisplayError }));
     $('#machint').hidden = !hints.length; $('#machint').textContent = hints.join(' ');
-    const ax = s.mac.mouseError ? s.mac.mouseError : s.mac.axTrusted === false ? 'Нет разрешения «Универсальный доступ» для Electron (Системные настройки → Конфиденциальность и безопасность → Универсальный доступ) — касания не дойдут до мыши.' : '';
+    const ax = s.mac.mouseError ? s.mac.mouseError : s.mac.axTrusted === false ? t('mac.ax') : '';
     $('#axhint').hidden = !ax; $('#axhint').textContent = ax;
   }
-});
-host.onSessionHint((t) => { const el = $('#audiostat'); el.textContent = t || ''; el.className = t ? 'warn' : 'stat'; });
-host.onServerError((m) => { $('#urls').innerHTML = '<span class="warn">Не удалось запустить сервер: ' + m + '</span>'; });
+}
+host.onStatus(renderStatus);
+host.onSessionHint((key) => { const el = $('#audiostat'); el.textContent = key ? t('a.' + key) : ''; el.className = key ? 'warn' : 'stat'; });
+host.onServerError((m) => { $('#urls').innerHTML = '<span class="warn">' + t('err.server', { m }) + '</span>'; });
+
+function applyLang() {
+  i18n.setLang($('#lang').value || 'auto');
+  document.documentElement.lang = i18n.lang;
+  i18n.applyI18n();
+  $('#toggle').textContent = t(running ? 'btn.stop' : 'btn.start');
+  $('#manualbtn').textContent = t('conn.manual') + ($('#manualrow').hidden ? ' ▾' : ' ▴');
+  $('#tcpbtn').textContent = t($('#tcpbtn').dataset.on ? 'conn.disconnect' : 'conn.connect');
+  if (!running) $('#stat').textContent = t('stat.stopped');
+  loadAudioDevices(); loadSources();
+  if (lastStatus) renderStatus(lastStatus); else refreshPill();
+  refreshUsb();
+}
+$('#lang').onchange = async () => { await persist(); applyLang(); };
 
 (async () => {
   const info = await loadInfo();
   applySettingsToUI();
+  applyLang();
   await loadAudioDevices();
   await loadSources();
   refreshUsb();

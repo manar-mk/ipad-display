@@ -21,6 +21,7 @@ const { spawn } = require('child_process');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 const usbmux = require('./usbmux');
+const applaunch = require('./applaunch');
 
 const HTTP_PORT = parseInt(process.env.IPAD_DISPLAY_PORT || '7800', 10);
 const BEACON_PORT = 7802;
@@ -29,7 +30,7 @@ const APP_PORT = 7801;
 // ---------- settings ----------
 // audioSource: 'auto' (virtual cable such as "CABLE Output" if present, else whole system), 'loopback', or an audio input deviceId
 // codec: 'auto' (H.264 to the native app when WebCodecs can encode it, JPEG otherwise), 'h264', 'jpeg'; bitrate in kbit/s
-const DEFAULTS = { displayId: null, size: '1024x768', fps: 60, quality: 60, autostart: true, autoconnect: true, audio: true, audioSource: 'auto', touch: true, codec: 'auto', bitrate: 6000, manageDisplay: true, manageAudio: true, audioDefault: false };
+const DEFAULTS = { displayId: null, size: '1024x768', fps: 60, quality: 60, autostart: true, autoconnect: true, audio: true, audioSource: 'auto', touch: true, codec: 'auto', bitrate: 6000, manageDisplay: true, manageAudio: true, audioDefault: false, lang: 'auto', autolaunch: true };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() { try { settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) }; } catch (e) { /* first run */ } }
@@ -164,7 +165,7 @@ async function sessionStart() {
   if (settings.audioDefault) {
     const r = await runSession('audio-cable');
     // some vendor audio panels (Nahimic, Realtek, SteelSeries Sonar) force their own default device back
-    if (/to-cable-failed/.test(r)) sessionHint('Не удалось сделать «iPad Display» устройством по умолчанию: его возвращает звуковая утилита (Nahimic/Realtek). Назначьте нужное приложение на кабель в «Микшер громкости» или закройте утилиту.');
+    if (/to-cable-failed/.test(r)) sessionHint('defaultFailed'); // the panel turns the key into text
   }
 }
 async function sessionStop(sync, why) {
@@ -496,7 +497,12 @@ function startDiscovery() {
     if (Date.now() - usbFailedAt < 30000) return; // the app was not listening over USB a moment ago; retry later
     console.log('auto-connect USB' + (tcp.state === 'connected' ? ' (switching from Wi-Fi)' : ''));
     usbConnect(APP_PORT); tcp.since = Date.now();
-    setTimeout(() => { if (tcp.mode === 'usb' && tcp.state !== 'connected') { usbFailedAt = Date.now(); tcpDisconnect(); } }, 6000);
+    setTimeout(() => {
+      if (tcp.mode === 'usb' && tcp.state !== 'connected') {
+        usbFailedAt = Date.now(); tcpDisconnect();
+        if (settings.autolaunch) applaunch.launchOverUsb().then((ok) => { if (ok) usbFailedAt = 0; });
+      }
+    }, 6000);
   }, 5000);
 }
 
@@ -562,7 +568,7 @@ function notifyStatus() {
   win.webContents.send('status', {
     ws: [...wsClients.values()].map((s) => s.ip),
     tcp: { state: tcp.state, mode: tcp.mode, host: tcp.host, port: tcp.port, error: tcp.error },
-    discovered: [...discovered].map(([ip, d]) => ip + (d.busy ? ' (занят)' : '')),
+    discovered: [...discovered].map(([ip, d]) => ({ ip, busy: !!d.busy })),
     mac: MAC ? { axTrusted: mac.axTrusted, mouseError: mac.mouseError, vdisplay: mac.vdisplayId, vdisplayError: mac.vdisplayError, screenAccess: systemPreferences.getMediaAccessStatus('screen') } : null,
   });
 }

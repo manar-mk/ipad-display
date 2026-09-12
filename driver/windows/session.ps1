@@ -1,4 +1,4 @@
-# session.ps1 — turns the Windows side of the "second monitor" on and off without admin rights:
+﻿# session.ps1 — turns the Windows side of the "second monitor" on and off without admin rights:
 #   * attach / detach the virtual monitor to the desktop (ChangeDisplaySettingsEx; the driver stays installed,
 #     but the phantom screen disappears from the desktop when the host stops)
 #   * switch the default playback device to the virtual cable and back (IPolicyConfig; the previous device is
