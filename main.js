@@ -182,7 +182,7 @@ async function sessionStop(sync, why) {
 
 // ffmpeg capture (dshow / avfoundation) of the virtual cable for the app (see onAudioChunk); the renderer path stays for Safari.
 const CABLE_RE = /CABLE Output|VB-Audio|Virtual Cable|BlackHole|iPad/i; // VB-CABLE on Windows, BlackHole on macOS
-const extAudio = { device: null, probed: 0, cap: null, active: false };
+const extAudio = { device: null, probed: 0, cap: null, active: false, peak: 0, watchdog: null };
 async function startExternalAudio() {
   if (!settings.audio || !ext.path || extAudio.active) return;
   if (!extAudio.device && Date.now() - extAudio.probed > 30000) { // no cable yet: look again on later connects (it may get installed meanwhile)
@@ -199,9 +199,30 @@ async function startExternalAudio() {
   extAudio.cap.onChunk = (buf) => onAudioChunk(buf, 'ffmpeg');
   extAudio.cap.onExit = (code) => { if (extAudio.active) { console.error('[ffmpeg-audio] exited', code, '- restarting'); extAudio.active = false; setTimeout(startExternalAudio, 1000); } };
   extAudio.cap.start({ device: extAudio.device, rate: 22050, chunkSamples: 2048 });
+  extAudio.peak = 0;
+  if (MAC) watchExternalAudio();
   console.log('[ffmpeg-audio] started on', extAudio.device);
 }
-function stopExternalAudio() { extAudio.active = false; if (extAudio.cap) extAudio.cap.stop(); }
+function stopExternalAudio() { extAudio.active = false; clearInterval(extAudio.watchdog); extAudio.watchdog = null; if (extAudio.cap) extAudio.cap.stop(); }
+
+// Watchdog: the avfoundation capture can wedge — the process keeps producing chunks, but every sample is zero,
+// so the iPad goes quiet with nothing in the logs to show for it. The panel reads the same cable through Web Audio,
+// so its level is an independent reference: sound on the cable but pure silence out of ffmpeg means ours is stuck.
+let rendererPeak = 0; // loudest sample the panel's own capture saw in the last second
+function watchExternalAudio() {
+  clearInterval(extAudio.watchdog);
+  let silent = 0;
+  extAudio.watchdog = setInterval(() => {
+    if (!extAudio.active || !extAudio.cap || !extAudio.cap.running) return;
+    silent = (extAudio.peak === 0 && rendererPeak > 300) ? silent + 1 : 0;
+    extAudio.peak = 0;
+    if (silent < 8) return;
+    silent = 0;
+    console.error('[ffmpeg-audio] capturing silence while the cable has sound - restarting');
+    extAudio.active = false; extAudio.cap.stop();
+    setTimeout(startExternalAudio, 300);
+  }, 1000);
+}
 
 function requestKeyframe(why) {
   needKey = true;
@@ -251,7 +272,10 @@ function onAudioChunk(buf, source) {
   // audio is small (4 KB per chunk): send it ahead of video unless the socket is badly backed up
   if ((source === 'ffmpeg' || appFromRenderer) && tcp.socket && tcp.state === 'connected') {
     if (tcp.socket.writableLength < 2 * 1024 * 1024) { tcp.socket.write(m); audioStats.sent++; } else audioStats.dropped++;
-    for (let i = 0; i + 1 < buf.length; i += 16) { const v = Math.abs(buf.readInt16LE(i)); if (v > audioStats.peak) audioStats.peak = v; }
+    let peak = 0;
+    for (let i = 0; i + 1 < buf.length; i += 16) { const v = Math.abs(buf.readInt16LE(i)); if (v > peak) peak = v; }
+    if (peak > audioStats.peak) audioStats.peak = peak;          // shown in the panel log
+    if (source === 'ffmpeg' && peak > extAudio.peak) extAudio.peak = peak; // watched by watchExternalAudio
   }
   if (source !== 'renderer') return; // Safari clients keep getting the renderer's stream
   for (const [ws] of wsClients) if (ws.readyState === ws.OPEN && ws.bufferedAmount < 256 * 1024) ws.send(m, { binary: true });
@@ -706,6 +730,7 @@ ipcMain.on('log', (e, msg) => console.log('[panel]', msg));
 ipcMain.on('frame', (e, ab) => onNewFrame(Buffer.from(ab)));
 ipcMain.on('audio-format', (e, rate, channels) => onAudioFormat(rate, channels));
 ipcMain.on('audio', (e, ab) => onAudioChunk(Buffer.from(ab), 'renderer'));
+ipcMain.on('audio-level', (e, peak) => { rendererPeak = peak | 0; });
 ipcMain.on('video-config', (e, ab) => onVideoConfig(Buffer.from(ab)));
 ipcMain.on('video-chunk', (e, ab, key, ptsMs) => onVideoChunk(Buffer.from(ab), !!key, ptsMs | 0));
-ipcMain.handle('video-stats', () => { const dt = (Date.now() - videoStats.t) / 1000 || 1; const r = { fps: videoStats.frames / dt, kbps: videoStats.bytes * 8 / dt / 1000, dropped: videoStats.dropped, connected: tcp.state === 'connected', external: ext.active, encoder: encoderMode(), latency: latencyMs === null ? null : Math.round(latencyMs), audioSent: audioStats.sent, audioDropped: audioStats.dropped, audioPeak: audioStats.peak, audioSource: extAudio.active ? 'ffmpeg' : 'renderer' }; audioStats.sent = 0; audioStats.dropped = 0; audioStats.peak = 0; videoStats.frames = 0; videoStats.bytes = 0; videoStats.dropped = 0; videoStats.t = Date.now(); return r; });
+ipcMain.handle('video-stats', () => { const dt = (Date.now() - videoStats.t) / 1000 || 1; const r = { fps: videoStats.frames / dt, kbps: videoStats.bytes * 8 / dt / 1000, dropped: videoStats.dropped, connected: tcp.state === 'connected', external: ext.active, encoder: encoderMode(), latency: latencyMs === null ? null : Math.round(latencyMs), audioSent: audioStats.sent, audioDropped: audioStats.dropped, audioPeak: audioStats.peak, audioSource: extAudio.active ? 'ffmpeg' : 'renderer', refPeak: rendererPeak }; audioStats.sent = 0; audioStats.dropped = 0; audioStats.peak = 0; videoStats.frames = 0; videoStats.bytes = 0; videoStats.dropped = 0; videoStats.t = Date.now(); return r; });

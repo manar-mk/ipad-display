@@ -242,6 +242,7 @@ const work = document.createElement('canvas'), wctx = work.getContext('2d', { al
 const small = document.createElement('canvas'); small.width = 48; small.height = 36; const sctx = small.getContext('2d', { alpha: false, willReadFrequently: true });
 const preview = $('#preview'), pctx = preview.getContext('2d', { alpha: false });
 let prevSmall = null, lastForced = 0, frames = 0, bytes = 0, statT = Date.now(), encoding = false;
+let rendererPeak = 0;
 let audioCtx = null, audioNode = null, audioTrack = null, audioLabel = '', aChunks = 0;
 
 // ---------- settings <-> UI ----------
@@ -348,7 +349,9 @@ async function startAudio(s) {
     if (!running || !$('#audio').checked) return;
     const f = ev.inputBuffer.getChannelData(0);
     const out = new Int16Array(f.length);
-    for (let i = 0; i < f.length; i++) { const v = Math.max(-1, Math.min(1, f[i])); out[i] = v < 0 ? v * 32768 : v * 32767; }
+    let p = 0;
+    for (let i = 0; i < f.length; i++) { const v = Math.max(-1, Math.min(1, f[i])); if (v > p) p = v; else if (-v > p) p = -v; out[i] = v < 0 ? v * 32768 : v * 32767; }
+    if (p * 32767 > rendererPeak) rendererPeak = Math.round(p * 32767); // reference level: this capture reads the same cable as ffmpeg does
     host.sendAudio(out.buffer);
   };
   src.connect(audioNode); audioNode.connect(audioCtx.destination); // destination keeps the node alive; it is muted upstream
@@ -444,7 +447,8 @@ setInterval(async () => {
   // with the external encoder no JPEG frames flow, so #stat would keep the 'preparing' text
   if (running && extEnc) $('#stat').textContent = t('stat.capture', { w: video.videoWidth || '?', h: video.videoHeight || '?' }) + (audioNode ? t('stat.sound', { src: audioLabel }) : '');
   if ((enc || extEnc) && (Date.now() / 1000 | 0) % 5 === 0) host.log('video: ' + line);
-  if ((Date.now() / 1000 | 0) % 5 === 0) host.log('audio: chunks=' + aChunks + ' ctx=' + (audioCtx ? audioCtx.state : '-') + ' track=' + (audioTrack ? audioTrack.readyState + (audioTrack.muted ? '/muted' : '') : '-') + ' label=' + audioLabel + ' toApp sent=' + s.audioSent + ' dropped=' + s.audioDropped + ' peak=' + s.audioPeak + ' via ' + s.audioSource);
+  if ((Date.now() / 1000 | 0) % 5 === 0) host.log('audio: chunks=' + aChunks + ' ctx=' + (audioCtx ? audioCtx.state : '-') + ' track=' + (audioTrack ? audioTrack.readyState + (audioTrack.muted ? '/muted' : '') : '-') + ' label=' + audioLabel + ' toApp sent=' + s.audioSent + ' dropped=' + s.audioDropped + ' peak=' + s.audioPeak + '/' + s.refPeak + ' via ' + s.audioSource);
+  host.audioLevel(rendererPeak); rendererPeak = 0; // lets the main process see when its own ffmpeg capture went silent while this one did not
   vFrames = 0; vBytes = 0;
 }, 1000);
 
