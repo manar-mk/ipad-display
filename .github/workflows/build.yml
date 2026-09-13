@@ -18,7 +18,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run dist -- --win
@@ -36,7 +36,7 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # unsigned build: the user opens it with right click -> Open
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - name: Swift helpers (vdisplay, mousehelper, audiosetup)
