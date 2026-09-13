@@ -740,11 +740,17 @@ ipcMain.handle('get-sources', async () => {
     return { id: s.id, name: s.name, display_id: s.display_id, thumb: s.thumbnail.toDataURL(), bounds: d && d.bounds, selected: !!chosen && chosen.id === s.id };
   });
 });
-ipcMain.handle('select-source', async (e, id) => {
+// persist=true only when the user picked a monitor in the panel. The panel also re-sends whatever is
+// currently selected when capture starts, and at that point the selection may still be pickSource()'s
+// fallback — saving that would write the primary monitor into settings and shadow the virtual one for good.
+ipcMain.handle('select-source', async (e, id, persist) => {
   selectedSourceId = id;
   const sources = await desktopCapturer.getSources({ types: ['screen'] });
   const s = sources.find((x) => x.id === id);
-  if (s) { saveSettings({ displayId: s.display_id }); selectedDisplay = screen.getAllDisplays().find((d) => String(d.id) === String(s.display_id)) || null; }
+  if (s) {
+    if (persist) saveSettings({ displayId: s.display_id });
+    selectedDisplay = screen.getAllDisplays().find((d) => String(d.id) === String(s.display_id)) || null;
+  }
   return true;
 });
 ipcMain.handle('get-info', async () => {

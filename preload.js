@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('host', {
   getSources: () => ipcRenderer.invoke('get-sources'),
-  selectSource: (id) => ipcRenderer.invoke('select-source', id),
+  selectSource: (id, persist) => ipcRenderer.invoke('select-source', id, !!persist),
   getInfo: () => ipcRenderer.invoke('get-info'),
   saveSettings: (patch) => ipcRenderer.invoke('save-settings', patch),
   setLoopback: (v) => ipcRenderer.invoke('set-loopback', v),
