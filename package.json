@@ -43,14 +43,14 @@
     "publish": null
   },
   "dependencies": {
-    "bplist-parser": "^0.3.2",
-    "plist": "^3.1.1",
+    "bplist-parser": "^0.5.0",
+    "plist": "^5.0.0",
     "qrcode": "^1.5.4",
     "ssh2": "^1.17.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
+    "electron": "^44.3.0",
     "electron-builder": "^26.15.3"
   },
   "repository": {
