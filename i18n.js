@@ -241,5 +241,6 @@
     (root || document).querySelectorAll('[data-i18n-title]').forEach((el) => { el.title = t(el.getAttribute('data-i18n-title')); });
   }
 
-  global.i18n = { t, setLang, applyI18n, get lang() { return lang; }, pickAuto };
+  // keys() is what tools/check.js uses to prove both dictionaries carry the same set.
+  global.i18n = { t, setLang, applyI18n, keys: (l) => Object.keys(DICT[l] || {}), get lang() { return lang; }, pickAuto };
 })(typeof window !== 'undefined' ? window : globalThis);

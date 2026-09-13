@@ -5,10 +5,11 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test-client": "node tools/test-client.js",
+    "test": "node tools/check.js",
     "setup": "node tools/setup.js",
     "icons": "node tools/make-icons.js",
     "shortcut": "node tools/make-shortcut.js",
+    "test-client": "node tools/test-client.js",
     "dist": "electron-builder",
     "helpers:mac": "bash driver/macos/build.sh"
   },
@@ -51,5 +52,14 @@
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^26.15.3"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/manar-mk/ipad-display.git"
+  },
+  "bugs": {
+    "url": "https://github.com/manar-mk/ipad-display/issues"
+  },
+  "homepage": "https://github.com/manar-mk/ipad-display#readme",
+  "author": "Manar Kurmanov"
 }

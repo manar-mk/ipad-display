@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installing the app on the iPad / Установка приложения на iPad
+    url: https://github.com/manar-mk/ipad-display/blob/main/docs/IPAD-APP.md
+    about: Requirements, jailbreak, building in CI and pushing the app over USB.
+  - name: Security issue / Уязвимость
+    url: https://github.com/manar-mk/ipad-display/security/advisories/new
+    about: Report privately, please — not as a public issue.

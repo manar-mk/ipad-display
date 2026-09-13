@@ -1,0 +1,73 @@
+name: Bug report / Ошибка
+description: Something does not work — connection, picture, sound, touches / Что-то не работает
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Пишите по-русски или по-английски — как удобнее. / Russian or English, whichever you prefer.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens / Что происходит
+      placeholder: The iPad shows the waiting screen and never connects…
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Как воспроизвести
+      placeholder: |
+        1. Start the host
+        2. Plug the cable in
+        3. …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: host
+    attributes:
+      label: Host / Хост
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+    validations:
+      required: true
+
+  - type: dropdown
+    id: link
+    attributes:
+      label: Link / Соединение
+      options:
+        - USB
+        - Wi-Fi (native app)
+        - Wi-Fi (Safari)
+    validations:
+      required: true
+
+  - type: input
+    id: ipad
+    attributes:
+      label: iPad and iOS / iPad и iOS
+      placeholder: iPad mini 1 (A1432), iOS 9.3.5, jailbroken with EverPwnage
+    validations:
+      required: true
+
+  - type: textarea
+    id: status
+    attributes:
+      label: What the panel says / Что показывает панель
+      description: The status pill in the header, and the line under the Start button.
+      placeholder: "streaming, iPad not found"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Логи
+      description: |
+        Host: the terminal you started it from, or the Electron window's DevTools console.
+        iPad (over USB): `node tools/ssh.js "cat /tmp/ipaddisplay.log"`.
+      render: shell

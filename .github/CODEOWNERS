@@ -1,0 +1,4 @@
+# Every change needs a review from the repository owner.
+# Combined with "Require review from Code Owners" in the branch protection rules for `main`,
+# this is what keeps anything from being merged without an approval.
+*       @manar-mk

@@ -1,0 +1,26 @@
+name: Idea / Предложение
+description: Suggest something the project should do / Предложить доработку
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What should it do / Что предлагается
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why / Зачем
+      description: What you are trying to achieve, and what you do today instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware you can test on / На чём можно проверить
+      description: |
+        This project is tied to specific hardware, so an idea that someone can actually test has a
+        much better chance. Which host and which iPad do you have?

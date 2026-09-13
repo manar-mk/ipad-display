@@ -1,0 +1,51 @@
+name: ci
+
+# Cheap, dependency-free checks that gate every pull request:
+# the sources parse, the npm scripts point at real files, and the two translations stay in sync.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # No `npm ci`: tools/check.js deliberately has no dependencies, and installing Electron
+      # here would cost minutes for nothing.
+      - name: Sources, scripts and translations
+        run: node tools/check.js
+
+      - name: Shell installer parses
+        run: bash -n install.sh
+
+      - name: PowerShell scripts parse
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              $bad++
+              Write-Host "::error file=$($_.FullName)::$($errors[0].Message)"
+            } else {
+              Write-Host "ok $($_.Name)"
+            }
+          }
+          if ($bad -gt 0) { exit 1 }

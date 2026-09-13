@@ -1,0 +1,23 @@
+# Text files are normalised to LF in the repository and checked out with the platform's endings.
+* text=auto
+
+# These must stay LF wherever they are checked out, or the interpreter chokes on the CR.
+*.sh        text eol=lf
+*.m         text eol=lf
+*.h         text eol=lf
+*.c         text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.ps1       text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# Never touched.
+*.png       binary
+*.ico       binary
+*.icns      binary
+*.dll       binary
+*.cat       binary
+*.ipa       binary
