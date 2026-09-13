@@ -1,5 +1,11 @@
 # iPad Display — старый iPad как второй монитор для Windows и macOS
 
+[![ci](https://github.com/manar-mk/ipad-display/actions/workflows/ci.yml/badge.svg)](https://github.com/manar-mk/ipad-display/actions/workflows/ci.yml)
+[![build](https://github.com/manar-mk/ipad-display/actions/workflows/build.yml/badge.svg)](https://github.com/manar-mk/ipad-display/actions/workflows/build.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**Русский** · [English](README.en.md)
+
 Превращает iPad в дополнительный экран компьютера: картинка с аппаратным H.264 до 60 fps, системный
 звук, управление курсором касаниями и жестами. Работает на устройствах, которым отказали Sidecar, Duet
 и Luna, — вплоть до iPad mini 1 / iPad 2 на iOS 9.3.5.
@@ -48,7 +54,21 @@
 Хосту всё равно нужны ffmpeg (и на Windows — «Apple Devices» для кабеля, на macOS — BlackHole для звука):
 команды ниже. Собрать локально: `npm install && npm run dist` (на macOS перед этим `npm run helpers:mac`).
 
-## Установка из исходников
+## Установка одной командой
+
+```bash
+git clone https://github.com/manar-mk/ipad-display
+cd ipad-display
+npm run setup
+```
+
+`install.ps1` (Windows, он же `install.cmd`) и `install.sh` (macOS) ставят Node.js, ffmpeg,
+виртуальный аудиокабель, драйвер виртуального монитора, рисуют иконки и создают ярлык на рабочем
+столе. Они говорят по-русски или по-английски в зависимости от языка системы, и их можно запускать
+повторно: уже установленное пропускается. Флаги: `-NoDriver`, `-NoAudio`, `-Start`
+(на macOS — `--no-audio`, `--start`).
+
+## Установка по шагам
 
 ### 1. Хост на Windows
 
@@ -128,7 +148,8 @@ brew install blackhole-2ch    # виртуальное аудиоустройс�
    на Windows тоже отцепляется, а на macOS он живёт, пока открыт хост, и исчезает при выходе из него.
 
 Кнопка «Как пользоваться» в шапке панели открывает ту же инструкцию и разбор частых проблем
-прямо в приложении.
+прямо в приложении. Селектор рядом переключает всю панель между русским и английским (по умолчанию
+берётся язык системы).
 
 ### Управление с iPad
 
@@ -169,6 +190,8 @@ brew install blackhole-2ch    # виртуальное аудиоустройс�
 - Выбирает виртуальный монитор (второй экран 4:3), на macOS сначала создаёт его.
 - Начинает захват сразу при запуске, включает звук и приём касаний.
 - Слушает UDP-маячки приложения iPad (порт 7802) и подключается сам; кабель имеет приоритет над Wi-Fi.
+- Если кабель воткнут, а приложение не отвечает, просит iPad открыть его по SSH (настройка
+  `autolaunch`). Заблокированному iPad SpringBoard запустить приложение не даёт — панель об этом пишет.
 - На «Стоп» и при закрытии окна убирает звуковые устройства кабеля; виртуальный монитор отцепляется
   на Windows, а на macOS исчезает при выходе из хоста.
 
@@ -187,6 +210,7 @@ brew install blackhole-2ch    # виртуальное аудиоустройс�
 | Нет виртуального монитора | Кнопка установки в первом блоке панели; на macOS — сообщение об ошибке CGVirtualDisplay, запасной путь DeskPad |
 | Приложение пропало с iPad | После перезагрузки iPad джейлбрейк не активен: запустите EverPwnage → Jailbreak, затем «iPad Display» |
 | iPad показывает другой компьютер | На iPad тап тремя пальцами → выберите нужный хост или «Любой хост» |
+| Чёрный экран на iPad, приложение запущено, порт 7801 отказывает | Залип `mediaserverd` на устройстве: `node tools/ssh.js "killall mediaserverd"`, затем запустите приложение снова |
 | Звук есть на компьютере, но не на iPad | Разберите тракт по участкам — см. «Почему нет звука» ниже |
 | Запущено несколько копий хоста | Порт 7800 занимает первая, остальные молча не обслуживают iPad. Проверка: `lsof -i :7800` (Windows: `netstat -ano \| findstr 7800`) |
 | iPad принимает звук, но молчит | Самопроверка на устройстве, см. «Почему нет звука» ниже |
@@ -305,6 +329,15 @@ JPEG — для Safari (в iOS 9 нет Media Source Extensions) и как за�
 
 Переменные окружения: `IPAD_DISPLAY_PORT` (порт HTTP, 7800), `IPAD_DISPLAY_AUTOSTART=1`,
 `IPAD_DISPLAY_TCP=host:port` или `=usb`, `IPAD_DISPLAY_FFMPEG=<путь>`, `IPAD_SSH_HOST`, `IPAD_SSH_PASS`.
+
+---
+
+## Участие, лицензия, безопасность
+
+* [CONTRIBUTING.md](CONTRIBUTING.md) — как поднять проект, что проверяет `npm test`, как устроены
+  pull request'ы. Ветка `main` защищена: нужен ревью и зелёный CI.
+* [SECURITY.md](SECURITY.md) — как сообщить об уязвимости и что позволяют открытые порты.
+* [LICENSE](LICENSE) — MIT. Сторонние компоненты: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ---
 
