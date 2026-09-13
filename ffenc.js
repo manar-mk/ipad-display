@@ -217,7 +217,13 @@ class AudioCapture {
   start({ device, rate = 22050, chunkSamples = 2048 }) {
     this.stop();
     const input = MAC ? ['-f', 'avfoundation', '-i', `:${device}`] : ['-f', 'dshow', '-audio_buffer_size', '20', '-i', `audio=${device}`];
-    const args = ['-hide_banner', '-loglevel', 'warning', ...input, '-ac', '1', '-ar', String(rate), '-f', 's16le', 'pipe:1'];
+    // macOS: ffmpeg's avfoundation input keeps a single pending audio buffer and overwrites it when two arrive
+    // between reads, so with BlackHole's 512-frame (10.7 ms) buffers it silently loses ~10% of them. The
+    // timestamps of what survives stay exact, so the stream comes out ~11% short of real time and the iPad's
+    // queue starves forever. aresample=async=1 makes swresample follow those timestamps and fill the holes,
+    // which restores an exactly real-time stream (measured 44023-44077 B/s against the 44100 B/s target).
+    const fix = MAC ? ['-af', 'aresample=async=1'] : [];
+    const args = ['-hide_banner', '-loglevel', 'warning', ...input, ...fix, '-ac', '1', '-ar', String(rate), '-f', 's16le', 'pipe:1'];
     const p = spawn(this.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     this.proc = p;
     const chunkBytes = chunkSamples * 2;
