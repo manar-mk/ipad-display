@@ -272,7 +272,7 @@ async function loadSources() {
     const dim = s.bounds ? s.bounds.width + '×' + s.bounds.height : '';
     if (s.bounds && Math.abs(s.bounds.width / s.bounds.height - 4 / 3) < 0.02) hasVirtual = true;
     b.innerHTML = '<img src="' + s.thumb + '"><div>' + s.name + ' <small>' + dim + '</small></div>';
-    b.onclick = () => { selected = s.id; host.selectSource(s.id); [...box.children].forEach(c => c.classList.remove('sel')); b.classList.add('sel'); if (running) restart(); };
+    b.onclick = () => { selected = s.id; host.selectSource(s.id, true); [...box.children].forEach(c => c.classList.remove('sel')); b.classList.add('sel'); if (running) restart(); };
     if (s.selected) selected = s.id;
     box.appendChild(b);
   });
