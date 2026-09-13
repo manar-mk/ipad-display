@@ -8,6 +8,15 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    ignore:
+      # plist 5 and bplist-parser 0.5 are ESM-only: their "exports" map has no "require"
+      # condition, so every require('plist') in usbmux.js and tools/ throws
+      # ERR_PACKAGE_PATH_NOT_EXPORTED and the host dies before its window opens (see #6).
+      # Lift this once those call sites move to dynamic import().
+      - dependency-name: plist
+        update-types: [version-update:semver-major]
+      - dependency-name: bplist-parser
+        update-types: [version-update:semver-major]
     commit-message:
       prefix: "deps"
 
